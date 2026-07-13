@@ -36,6 +36,8 @@ class NotesRepository @Inject constructor(
     fun observeGroups(): Flow<List<NoteGroupEntity>> = groupDao.observeRegularGroups()
     fun observeAllNotes(): Flow<List<NoteEntity>> = noteDao.observeAllRegular()
     fun observeNotesByGroup(groupId: Long): Flow<List<NoteEntity>> = noteDao.observeByGroup(groupId)
+    fun observeUngroupedNotes(): Flow<List<NoteEntity>> = noteDao.observeUngrouped()
+    fun observeDeletedNotes(): Flow<List<NoteEntity>> = noteDao.observeDeleted()
     fun observeNote(id: Long): Flow<NoteEntity?> = noteDao.observeById(id)
     fun observeAttachments(noteId: Long): Flow<List<AttachmentEntity>> = attachmentDao.observeByNote(noteId)
 
@@ -49,6 +51,8 @@ class NotesRepository @Inject constructor(
     suspend fun saveNote(note: NoteEntity): Long = noteDao.insert(note)
     suspend fun updateNote(note: NoteEntity) = noteDao.update(note)
     suspend fun deleteNote(id: Long) = noteDao.delete(id)
+    suspend fun softDeleteNote(id: Long) = noteDao.softDelete(id, System.currentTimeMillis())
+    suspend fun restoreNote(id: Long) = noteDao.restore(id, System.currentTimeMillis())
 
     suspend fun saveAttachment(attachment: AttachmentEntity): Long = attachmentDao.insert(attachment)
     suspend fun deleteAttachment(id: Long) = attachmentDao.delete(id)

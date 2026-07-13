@@ -11,26 +11,34 @@ import com.notes.vault.data.repository.VaultRepository
 import com.notes.vault.security.VaultCryptoManager
 import com.notes.vault.security.VaultSessionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** null = all notes, -1L = ungrouped only, >0 = group id */
+typealias SelectedGroupFilter = Long?
 
 data class HomeUiState(
     val section: NoteSection = NoteSection.ALL_NOTES,
     val groups: List<NoteGroupEntity> = emptyList(),
     val notes: List<NoteEntity> = emptyList(),
+    val selectedGroupId: SelectedGroupFilter = null,
     val vaultUnlocked: Boolean = false,
     val vaultCreated: Boolean = false,
     val isLoading: Boolean = true
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val notesRepository: NotesRepository,
@@ -38,24 +46,42 @@ class HomeViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val section = MutableStateFlow(NoteSection.ALL_NOTES)
+    private val selectedGroupId = MutableStateFlow<SelectedGroupFilter>(null)
+
+    private val notesFlow = selectedGroupId.flatMapLatest { filter ->
+        when {
+            filter == null -> notesRepository.observeAllNotes()
+            filter < 0 -> notesRepository.observeUngroupedNotes()
+            else -> notesRepository.observeNotesByGroup(filter)
+        }
+    }
 
     val uiState: StateFlow<HomeUiState> = combine(
         section,
         notesRepository.observeGroups(),
-        notesRepository.observeAllNotes()
-    ) { currentSection, groups, notes ->
+        notesFlow,
+        selectedGroupId
+    ) { currentSection, groups, notes, groupFilter ->
         HomeUiState(
             section = currentSection,
             groups = groups,
             notes = notes,
+            selectedGroupId = groupFilter,
             vaultUnlocked = vaultSession.isUnlocked,
             vaultCreated = vaultSession.isCreated,
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HomeUiState())
 
+    val deletedNotes = notesRepository.observeDeletedNotes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     fun setSection(newSection: NoteSection) {
         section.value = newSection
+    }
+
+    fun selectGroup(groupId: SelectedGroupFilter) {
+        selectedGroupId.value = groupId
     }
 
     fun createGroup(name: String, colorArgb: Int, iconName: String, isVault: Boolean) {
@@ -71,24 +97,62 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun saveQuickNote(title: String, content: String, noteId: Long?): Long {
-        var savedId = noteId ?: 0L
+    fun addNoteAtTop() {
         viewModelScope.launch {
-            val existing = if (noteId != null && noteId > 0) notesRepository.getNote(noteId) else null
-            val entity = (existing ?: NoteEntity(title = title, content = content)).copy(
-                title = title.ifBlank { content.lineSequence().firstOrNull()?.take(60).orEmpty() },
-                content = content,
-                updatedAt = System.currentTimeMillis()
+            val groupId = selectedGroupId.value?.takeIf { it > 0 }
+            notesRepository.saveNote(
+                NoteEntity(
+                    groupId = groupId,
+                    title = "",
+                    content = "",
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis()
+                )
             )
-            savedId = notesRepository.saveNote(entity)
         }
-        return savedId
+    }
+
+    fun updateDescription(noteId: Long, description: String) {
+        viewModelScope.launch {
+            val existing = notesRepository.getNote(noteId) ?: return@launch
+            notesRepository.saveNote(
+                existing.copy(
+                    title = description,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun updateContent(noteId: Long, content: String) {
+        viewModelScope.launch {
+            val existing = notesRepository.getNote(noteId) ?: return@launch
+            notesRepository.saveNote(
+                existing.copy(
+                    content = content,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun softDeleteNote(noteId: Long) {
+        viewModelScope.launch { notesRepository.softDeleteNote(noteId) }
+    }
+
+    fun hardDeleteNote(noteId: Long) {
+        viewModelScope.launch { notesRepository.deleteNote(noteId) }
+    }
+
+    fun restoreNote(noteId: Long) {
+        viewModelScope.launch { notesRepository.restoreNote(noteId) }
     }
 
     fun upsertNote(noteId: Long?, title: String, content: String, onSaved: (Long) -> Unit = {}) {
         viewModelScope.launch {
             val existing = if (noteId != null && noteId > 0) notesRepository.getNote(noteId) else null
-            val entity = (existing ?: NoteEntity(title = title, content = content)).copy(
+            val groupId = existing?.groupId ?: selectedGroupId.value?.takeIf { it > 0 }
+            val entity = (existing ?: NoteEntity(title = title, content = content, groupId = groupId)).copy(
                 title = title,
                 content = content,
                 updatedAt = System.currentTimeMillis()

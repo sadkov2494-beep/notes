@@ -24,11 +24,13 @@ class DatabaseProvider @Inject constructor(
 
     fun getNotesDatabase(): NotesDatabase {
         return notesDatabase ?: synchronized(this) {
-            notesDatabase ?: Room.databaseBuilder(
+                notesDatabase ?: Room.databaseBuilder(
                 context,
                 NotesDatabase::class.java,
                 "notes.db"
-            ).build().also { notesDatabase = it }
+            )
+                .fallbackToDestructiveMigration()
+                .build().also { notesDatabase = it }
         }
     }
 
@@ -88,6 +90,7 @@ class DatabaseProvider @Inject constructor(
             "vault.db"
         )
             .openHelperFactory(factory)
+            .fallbackToDestructiveMigration()
             .build()
     }
 

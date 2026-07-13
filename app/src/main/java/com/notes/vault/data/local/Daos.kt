@@ -37,11 +37,17 @@ interface GroupDao {
 
 @Dao
 interface NoteDao {
-    @Query("SELECT * FROM notes WHERE isVault = 0 ORDER BY pinned DESC, updatedAt DESC")
+    @Query("SELECT * FROM notes WHERE isVault = 0 AND deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeAllRegular(): Flow<List<NoteEntity>>
 
-    @Query("SELECT * FROM notes WHERE groupId = :groupId ORDER BY pinned DESC, updatedAt DESC")
+    @Query("SELECT * FROM notes WHERE groupId = :groupId AND deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeByGroup(groupId: Long): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE isVault = 0 AND deletedAt IS NULL AND groupId IS NULL ORDER BY createdAt DESC")
+    fun observeUngrouped(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE isVault = 0 AND deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    fun observeDeleted(): Flow<List<NoteEntity>>
 
     @Query("SELECT * FROM notes WHERE id = :id")
     suspend fun getById(id: Long): NoteEntity?
@@ -58,10 +64,16 @@ interface NoteDao {
     @Query("DELETE FROM notes WHERE id = :id")
     suspend fun delete(id: Long)
 
-    @Query("SELECT * FROM notes WHERE isVault = 0")
+    @Query("UPDATE notes SET deletedAt = :deletedAt, updatedAt = :deletedAt WHERE id = :id")
+    suspend fun softDelete(id: Long, deletedAt: Long)
+
+    @Query("UPDATE notes SET deletedAt = NULL, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun restore(id: Long, updatedAt: Long)
+
+    @Query("SELECT * FROM notes WHERE isVault = 0 AND deletedAt IS NULL")
     suspend fun getAllRegular(): List<NoteEntity>
 
-    @Query("SELECT * FROM notes WHERE reminderAt IS NOT NULL AND reminderAt > :now")
+    @Query("SELECT * FROM notes WHERE reminderAt IS NOT NULL AND reminderAt > :now AND deletedAt IS NULL")
     suspend fun getUpcomingReminders(now: Long): List<NoteEntity>
 }
 

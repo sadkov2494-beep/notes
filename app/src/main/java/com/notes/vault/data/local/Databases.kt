@@ -14,7 +14,7 @@ import com.notes.vault.data.model.VaultEntryEntity
         AttachmentEntity::class,
         VaultEntryEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class NotesDatabase : RoomDatabase() {
@@ -30,7 +30,7 @@ abstract class NotesDatabase : RoomDatabase() {
         AttachmentEntity::class,
         VaultEntryEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class VaultDatabase : RoomDatabase() {

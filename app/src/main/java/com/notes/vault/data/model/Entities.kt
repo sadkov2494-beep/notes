@@ -31,21 +31,22 @@ data class NoteGroupEntity(
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("groupId"), Index("isVault"), Index("reminderAt")]
+    indices = [Index("groupId"), Index("isVault"), Index("reminderAt"), Index("deletedAt")]
 )
 @Serializable
 data class NoteEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val groupId: Long? = null,
-    val title: String,
-    val content: String,
+    val title: String = "",
+    val content: String = "",
     val isVault: Boolean = false,
     val isChecklist: Boolean = false,
     val checklistJson: String? = null,
     val reminderAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-    val pinned: Boolean = false
+    val pinned: Boolean = false,
+    val deletedAt: Long? = null
 )
 
 @Entity(

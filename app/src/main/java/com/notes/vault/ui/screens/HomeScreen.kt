@@ -2,7 +2,12 @@ package com.notes.vault.ui.screens
 
 import android.os.VibrationEffect
 import android.os.Vibrator
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,24 +15,25 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,36 +47,35 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.notes.vault.data.model.NoteEntity
+import com.notes.vault.data.model.NoteGroupEntity
 import com.notes.vault.data.model.NoteSection
 import com.notes.vault.ui.components.AnimatedFingerprintIcon
 import com.notes.vault.ui.components.BiometricState
-import com.notes.vault.ui.components.NoteCard
+import com.notes.vault.ui.components.GraphicalNoteCard
 import com.notes.vault.ui.components.PinPad
 import com.notes.vault.ui.components.SectionToggle
 import com.notes.vault.ui.viewmodel.HomeViewModel
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onOpenGroup: (Long, Boolean) -> Unit,
     onOpenVault: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenTrash: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showGroupDialog by remember { mutableStateOf(false) }
-    var draftingNew by remember { mutableStateOf(false) }
 
     if (showGroupDialog) {
         CreateGroupDialog(
@@ -88,6 +93,9 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Заметки с Сейфом") },
                 actions = {
+                    IconButton(onClick = onOpenTrash) {
+                        Icon(Icons.Default.History, contentDescription = "История удалений")
+                    }
                     IconButton(onClick = { showGroupDialog = true }) {
                         Icon(Icons.Default.CreateNewFolder, contentDescription = "Группа")
                     }
@@ -99,7 +107,7 @@ fun HomeScreen(
         },
         floatingActionButton = {
             if (uiState.section == NoteSection.ALL_NOTES) {
-                FloatingActionButton(onClick = { draftingNew = true }) {
+                FloatingActionButton(onClick = { viewModel.addNoteAtTop() }) {
                     Icon(Icons.Default.Add, contentDescription = "Добавить")
                 }
             }
@@ -120,71 +128,33 @@ fun HomeScreen(
             )
 
             if (uiState.section == NoteSection.ALL_NOTES) {
+                GroupColumnsBar(
+                    groups = uiState.groups,
+                    selectedGroupId = uiState.selectedGroupId,
+                    onSelect = { viewModel.selectGroup(it) }
+                )
+
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    if (uiState.groups.isNotEmpty()) {
-                        item {
-                            Text(
-                                "Группы",
-                                style = MaterialTheme.typography.titleSmall,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                            )
-                        }
-                        items(uiState.groups, key = { "g-${it.id}" }) { group ->
-                            NoteCard(
-                                title = group.name,
-                                subtitle = "Группа",
-                                onClick = { onOpenGroup(group.id, false) },
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-                        }
-                        item {
-                            Text(
-                                "Заметки",
-                                style = MaterialTheme.typography.titleSmall,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-
-                    if (draftingNew) {
-                        item(key = "draft") {
-                            InlineNoteRow(
-                                noteId = null,
-                                initialTitle = "",
-                                initialContent = "",
-                                onCommit = { id, title, content ->
-                                    viewModel.upsertNote(id, title, content) {
-                                        draftingNew = false
-                                    }
-                                },
-                                onDelete = { draftingNew = false }
-                            )
-                        }
-                    }
-
                     items(uiState.notes, key = { it.id }) { note ->
-                        InlineNoteRow(
-                            noteId = note.id,
-                            initialTitle = note.title,
-                            initialContent = note.content,
-                            onCommit = { id, title, content ->
-                                viewModel.upsertNote(id, title, content)
-                            },
-                            onDelete = { noteId ->
-                                if (noteId != null) viewModel.deleteNote(noteId)
-                            }
+                        val accent = groupAccent(uiState.groups, note.groupId)
+                        GraphicalNoteCard(
+                            note = note,
+                            accent = accent,
+                            onDescriptionChange = { viewModel.updateDescription(note.id, it) },
+                            onContentChange = { viewModel.updateContent(note.id, it) },
+                            onSoftDelete = { viewModel.softDeleteNote(note.id) },
+                            onHardDelete = { viewModel.hardDeleteNote(note.id) },
+                            modifier = Modifier.padding(horizontal = 16.dp)
                         )
                     }
-
-                    if (uiState.notes.isEmpty() && !draftingNew) {
+                    if (uiState.notes.isEmpty()) {
                         item {
                             Text(
-                                "Нажмите + и пишите прямо здесь",
-                                modifier = Modifier.padding(16.dp),
-                                style = MaterialTheme.typography.bodyLarge,
+                                "＋  — новая заметка появится сверху",
+                                modifier = Modifier.padding(24.dp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -197,88 +167,155 @@ fun HomeScreen(
 }
 
 @Composable
-private fun InlineNoteRow(
-    noteId: Long?,
-    initialTitle: String,
-    initialContent: String,
-    onCommit: (noteId: Long?, title: String, content: String) -> Unit,
-    onDelete: (noteId: Long?) -> Unit
+private fun GroupColumnsBar(
+    groups: List<NoteGroupEntity>,
+    selectedGroupId: Long?,
+    onSelect: (Long?) -> Unit
 ) {
-    var title by remember(noteId, initialTitle) { mutableStateOf(initialTitle) }
-    var content by remember(noteId, initialContent) { mutableStateOf(initialContent) }
-    val scope = rememberCoroutineScope()
-    var saveJob by remember { mutableStateOf<Job?>(null) }
-
-    fun scheduleSave() {
-        saveJob?.cancel()
-        saveJob = scope.launch {
-            delay(450)
-            if (title.isNotBlank() || content.isNotBlank()) {
-                onCommit(noteId, title, content)
-            }
-        }
-    }
-
-    Card(
+    val scroll = rememberScrollState()
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            .horizontalScroll(scroll)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = {
-                        title = it
-                        scheduleSave()
-                    },
-                    placeholder = { Text("Заголовок") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .onFocusChanged { focus ->
-                            if (!focus.isFocused) scheduleSave()
-                        },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                        focusedBorderColor = MaterialTheme.colorScheme.primary
-                    )
-                )
-                IconButton(onClick = {
-                    saveJob?.cancel()
-                    onDelete(noteId)
-                }) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Удалить",
-                        tint = MaterialTheme.colorScheme.error
+        GroupColumnChip(
+            label = "Все",
+            color = MaterialTheme.colorScheme.primary,
+            selected = selectedGroupId == null,
+            onClick = { onSelect(null) }
+        )
+        GroupColumnChip(
+            label = "◦◦◦",
+            color = MaterialTheme.colorScheme.outline,
+            selected = selectedGroupId != null && selectedGroupId < 0,
+            onClick = { onSelect(-1L) }
+        )
+        groups.forEach { group ->
+            GroupColumnChip(
+                label = group.name.take(12),
+                color = Color(group.colorArgb),
+                selected = selectedGroupId == group.id,
+                onClick = { onSelect(group.id) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun GroupColumnChip(
+    label: String,
+    color: Color,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .then(
+                if (selected) {
+                    Modifier.border(2.dp, color, RoundedCornerShape(14.dp))
+                } else Modifier
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 42.dp, height = 6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(color)
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) color else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun groupAccent(groups: List<NoteGroupEntity>, groupId: Long?): Color {
+    val found = groups.firstOrNull { it.id == groupId }
+    return if (found != null) Color(found.colorArgb) else Color(0xFF8B5E3C)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DeletedNotesScreen(
+    onBack: () -> Unit,
+    viewModel: HomeViewModel = hiltViewModel()
+) {
+    val deleted by viewModel.deletedNotes.collectAsStateWithLifecycle()
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("История удалений") },
+                navigationIcon = {
+                    TextButton(onClick = onBack) { Text("Назад") }
+                }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (deleted.isEmpty()) {
+                item {
+                    Text(
+                        "Пусто — свайп влево убирает заметку сюда",
+                        modifier = Modifier.padding(16.dp)
                     )
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            OutlinedTextField(
-                value = content,
-                onValueChange = {
-                    content = it
-                    scheduleSave()
-                },
-                placeholder = { Text("Текст заметки…") },
+            items(deleted, key = { it.id }) { note ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(0.3f)))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        GraphicalMiniBars(note.content)
+                    }
+                    TextButton(onClick = { viewModel.restoreNote(note.id) }) {
+                        Text("Вернуть")
+                    }
+                    TextButton(onClick = { viewModel.hardDeleteNote(note.id) }) {
+                        Text("✕")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GraphicalMiniBars(content: String) {
+    val accent = MaterialTheme.colorScheme.primary
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        val lengths = listOf(0.8f, 0.55f, 0.65f).mapIndexed { i, base ->
+            val factor = if (content.isBlank()) base else ((content.hashCode() + i * 13).mod(40) + 40) / 100f
+            factor
+        }
+        lengths.forEach { w ->
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { focus ->
-                        if (!focus.isFocused) scheduleSave()
-                    },
-                minLines = 2,
-                maxLines = 8,
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
-                    focusedBorderColor = MaterialTheme.colorScheme.primary
-                )
+                    .fillMaxWidth(w)
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(accent.copy(alpha = 0.5f))
             )
         }
     }
@@ -405,12 +442,6 @@ fun VaultUnlockScreen(
                 ) {
                     Text("Разблокировать")
                 }
-                Text(
-                    "Сейф был создан с паролем. PIN появится после пересоздания Сейфа.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
             }
 
             error?.let {
@@ -474,7 +505,7 @@ fun VaultSetupScreen(
             }
             else -> {
                 Text(
-                    "Фраза восстановления (мин. 5 символов) — на случай сброса PIN",
+                    "Фраза восстановления (мин. 5 символов)",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(12.dp))

@@ -10,6 +10,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.notes.vault.ui.LocalAppActions
+import com.notes.vault.ui.screens.DeletedNotesScreen
 import com.notes.vault.ui.screens.GroupScreen
 import com.notes.vault.ui.screens.HomeScreen
 import com.notes.vault.ui.screens.NoteEditorScreen
@@ -43,12 +44,13 @@ fun NotesNavHost(openNoteId: Long = -1L) {
     NavHost(navController = navController, startDestination = Home) {
         composable<Home> {
             HomeScreen(
-                onOpenGroup = { groupId, isVault ->
-                    navController.navigate(Group(groupId, isVault))
-                },
                 onOpenVault = { navController.navigate(VaultUnlock) },
-                onOpenSettings = { navController.navigate(Settings) }
+                onOpenSettings = { navController.navigate(Settings) },
+                onOpenTrash = { navController.navigate(DeletedHistory) }
             )
+        }
+        composable<DeletedHistory> {
+            DeletedNotesScreen(onBack = { navController.popBackStack() })
         }
         composable<Group> { backStackEntry ->
             val route = backStackEntry.toRoute<Group>()

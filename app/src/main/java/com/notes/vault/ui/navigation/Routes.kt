@@ -25,3 +25,6 @@ object Settings
 
 @Serializable
 object VaultHome
+
+@Serializable
+object DeletedHistory
