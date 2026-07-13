@@ -1,13 +1,5 @@
 package com.notes.vault.ui.screens
 
-import android.net.Uri
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.rememberSharedContentState
-import androidx.compose.animation.sharedElement
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,13 +47,11 @@ import com.notes.vault.ui.components.ChecklistItemRow
 import com.notes.vault.ui.viewmodel.NoteEditorViewModel
 import com.notes.vault.util.MarkdownHelper
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteEditorScreen(
     noteId: Long,
     onBack: () -> Unit,
-    sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
     viewModel: NoteEditorViewModel = hiltViewModel()
 ) {
     val note by viewModel.note.collectAsStateWithLifecycle()
@@ -79,18 +69,6 @@ fun NoteEditorScreen(
                 addAll(MarkdownHelper.parseChecklist(json))
             }
         }
-    }
-
-    val titleModifier = if (noteId > 0) {
-        with(sharedTransitionScope) {
-            Modifier.sharedElement(
-                rememberSharedContentState(key = "note-card-$noteId"),
-                animatedVisibilityScope = animatedVisibilityScope,
-                boundsTransform = { _, _ -> spring(stiffness = Spring.StiffnessMediumLow) }
-            )
-        }
-    } else {
-        Modifier
     }
 
     Scaffold(
@@ -153,7 +131,7 @@ fun NoteEditorScreen(
                 value = title,
                 onValueChange = { title = it },
                 label = { Text("Заголовок") },
-                modifier = Modifier.fillMaxWidth().then(titleModifier)
+                modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

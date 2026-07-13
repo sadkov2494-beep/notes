@@ -1,6 +1,7 @@
 package com.notes.vault.widget
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -19,6 +20,7 @@ import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.padding
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import com.notes.vault.MainActivity
 
 private val NoteIdKey = ActionParameters.Key<Long>("note_id")
 private val ItemIdKey = ActionParameters.Key<String>("item_id")
@@ -33,6 +35,7 @@ class ChecklistGlanceWidget : GlanceAppWidget() {
                         .fillMaxSize()
                         .background(GlanceTheme.colors.surface)
                         .padding(12.dp)
+                        .clickable(actionRunCallback<OpenChecklistAction>())
                 ) {
                     Text(
                         text = data?.first?.title?.ifBlank { "Чек-лист" } ?: "Чек-лист",
@@ -46,7 +49,6 @@ class ChecklistGlanceWidget : GlanceAppWidget() {
                             modifier = GlanceModifier.padding(top = 8.dp)
                         )
                     } else {
-                        val noteId = data!!.first.id
                         items.forEach { item ->
                             Text(
                                 text = (if (item.checked) "☑ " else "☐ ") + item.text,
@@ -54,16 +56,7 @@ class ChecklistGlanceWidget : GlanceAppWidget() {
                                     fontSize = 12.sp,
                                     color = GlanceTheme.colors.onSurface
                                 ),
-                                modifier = GlanceModifier
-                                    .padding(top = 4.dp)
-                                    .clickable(
-                                        actionRunCallback<ToggleChecklistItemAction>(
-                                            ActionParameters.Builder()
-                                                .apply(NoteIdKey, noteId)
-                                                .apply(ItemIdKey, item.id)
-                                                .build()
-                                        )
-                                    )
+                                modifier = GlanceModifier.padding(top = 4.dp)
                             )
                         }
                     }
@@ -73,16 +66,16 @@ class ChecklistGlanceWidget : GlanceAppWidget() {
     }
 }
 
-class ToggleChecklistItemAction : ActionCallback {
+class OpenChecklistAction : ActionCallback {
     override suspend fun onAction(
         context: Context,
         glanceId: GlanceId,
         parameters: ActionParameters
     ) {
-        val noteId = parameters[NoteIdKey] ?: return
-        val itemId = parameters[ItemIdKey] ?: return
-        WidgetDataHelper.toggleChecklistItem(context, noteId, itemId)
-        ChecklistGlanceWidget().update(context, glanceId)
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(intent)
     }
 }
 

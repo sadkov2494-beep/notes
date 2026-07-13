@@ -2,9 +2,6 @@ package com.notes.vault.ui.screens
 
 import android.os.VibrationEffect
 import android.os.Vibrator
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -49,7 +46,7 @@ import com.notes.vault.ui.components.NoteCard
 import com.notes.vault.ui.components.SectionToggle
 import com.notes.vault.ui.viewmodel.HomeViewModel
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onOpenNote: (Long) -> Unit,
@@ -57,8 +54,6 @@ fun HomeScreen(
     onOpenVault: () -> Unit,
     onOpenSettings: () -> Unit,
     onCreateNote: () -> Unit,
-    sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -142,10 +137,7 @@ fun HomeScreen(
                                 title = note.title,
                                 subtitle = note.content,
                                 onClick = { onOpenNote(note.id) },
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                noteId = note.id,
-                                sharedTransitionScope = sharedTransitionScope,
-                                animatedVisibilityScope = animatedVisibilityScope
+                                modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
                     }
@@ -165,10 +157,7 @@ fun HomeScreen(
                                 title = note.title,
                                 subtitle = note.content,
                                 onClick = { onOpenNote(note.id) },
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                noteId = note.id,
-                                sharedTransitionScope = sharedTransitionScope,
-                                animatedVisibilityScope = animatedVisibilityScope
+                                modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
                     }

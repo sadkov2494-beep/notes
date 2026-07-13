@@ -13,6 +13,7 @@ import com.notes.vault.data.model.AttachmentEntity
 import com.notes.vault.data.model.NoteEntity
 import com.notes.vault.data.model.NoteGroupEntity
 import com.notes.vault.data.model.VaultEntryEntity
+import com.notes.vault.security.VaultSessionManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow

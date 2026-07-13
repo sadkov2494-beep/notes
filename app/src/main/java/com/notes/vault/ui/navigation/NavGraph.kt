@@ -1,7 +1,5 @@
 package com.notes.vault.ui.navigation
 
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,7 +20,6 @@ import com.notes.vault.ui.screens.VaultSetupScreen
 import com.notes.vault.ui.screens.VaultUnlockScreen
 import com.notes.vault.ui.viewmodel.SettingsViewModel
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun NotesNavHost(openNoteId: Long = -1L) {
     val navController = rememberNavController()
@@ -43,89 +40,81 @@ fun NotesNavHost(openNoteId: Long = -1L) {
         }
     }
 
-    SharedTransitionLayout {
-        NavHost(navController = navController, startDestination = Home) {
-            composable<Home> {
-                HomeScreen(
-                    onOpenNote = { navController.navigate(NoteEditor(it)) },
-                    onOpenGroup = { groupId, isVault ->
-                        navController.navigate(Group(groupId, isVault))
-                    },
-                    onOpenVault = { navController.navigate(VaultUnlock) },
-                    onOpenSettings = { navController.navigate(Settings) },
-                    onCreateNote = { navController.navigate(NoteEditor()) },
-                    animatedVisibilityScope = this@composable,
-                    sharedTransitionScope = this@SharedTransitionLayout
-                )
-            }
-            composable<Group> { backStackEntry ->
-                val route = backStackEntry.toRoute<Group>()
-                GroupScreen(
-                    groupId = route.groupId,
-                    isVault = route.isVault,
-                    onBack = { navController.popBackStack() },
-                    onOpenNote = { id ->
-                        if (route.isVault) navController.navigate(VaultEntryEditor(id))
-                        else navController.navigate(NoteEditor(id))
-                    },
-                    animatedVisibilityScope = this@composable,
-                    sharedTransitionScope = this@SharedTransitionLayout
-                )
-            }
-            composable<VaultUnlock> {
-                VaultUnlockScreen(
-                    onUnlocked = {
-                        navController.navigate(VaultHome) {
-                            popUpTo(VaultUnlock) { inclusive = true }
-                        }
-                    },
-                    onSetup = {
-                        navController.navigate(VaultSetup) {
-                            popUpTo(VaultUnlock) { inclusive = true }
-                        }
+    NavHost(navController = navController, startDestination = Home) {
+        composable<Home> {
+            HomeScreen(
+                onOpenNote = { navController.navigate(NoteEditor(it)) },
+                onOpenGroup = { groupId, isVault ->
+                    navController.navigate(Group(groupId, isVault))
+                },
+                onOpenVault = { navController.navigate(VaultUnlock) },
+                onOpenSettings = { navController.navigate(Settings) },
+                onCreateNote = { navController.navigate(NoteEditor()) }
+            )
+        }
+        composable<Group> { backStackEntry ->
+            val route = backStackEntry.toRoute<Group>()
+            GroupScreen(
+                groupId = route.groupId,
+                isVault = route.isVault,
+                onBack = { navController.popBackStack() },
+                onOpenNote = { id ->
+                    if (route.isVault) navController.navigate(VaultEntryEditor(id))
+                    else navController.navigate(NoteEditor(id))
+                }
+            )
+        }
+        composable<VaultUnlock> {
+            VaultUnlockScreen(
+                onUnlocked = {
+                    navController.navigate(VaultHome) {
+                        popUpTo(VaultUnlock) { inclusive = true }
                     }
-                )
-            }
-            composable<VaultSetup> {
-                VaultSetupScreen(
-                    onComplete = {
-                        navController.navigate(VaultHome) {
-                            popUpTo(VaultSetup) { inclusive = true }
-                        }
+                },
+                onSetup = {
+                    navController.navigate(VaultSetup) {
+                        popUpTo(VaultUnlock) { inclusive = true }
                     }
-                )
-            }
-            composable<VaultHome> {
-                VaultHomeScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenEntry = { navController.navigate(VaultEntryEditor(it)) },
-                    onCreateEntry = { navController.navigate(VaultEntryEditor()) }
-                )
-            }
-            composable<NoteEditor> { backStackEntry ->
-                val route = backStackEntry.toRoute<NoteEditor>()
-                NoteEditorScreen(
-                    noteId = route.noteId,
-                    onBack = { navController.popBackStack() },
-                    animatedVisibilityScope = this@composable,
-                    sharedTransitionScope = this@SharedTransitionLayout
-                )
-            }
-            composable<VaultEntryEditor> { backStackEntry ->
-                val route = backStackEntry.toRoute<VaultEntryEditor>()
-                VaultEntryEditorScreen(
-                    entryId = route.entryId,
-                    onBack = { navController.popBackStack() }
-                )
-            }
-            composable<Settings> {
-                SettingsScreen(
-                    onBack = { navController.popBackStack() },
-                    onExport = appActions.requestExport,
-                    onShareExport = appActions.requestShareExport,
-                    onImport = appActions.requestImport
-                )
-            }
+                }
+            )
+        }
+        composable<VaultSetup> {
+            VaultSetupScreen(
+                onComplete = {
+                    navController.navigate(VaultHome) {
+                        popUpTo(VaultSetup) { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable<VaultHome> {
+            VaultHomeScreen(
+                onBack = { navController.popBackStack() },
+                onOpenEntry = { navController.navigate(VaultEntryEditor(it)) },
+                onCreateEntry = { navController.navigate(VaultEntryEditor()) }
+            )
+        }
+        composable<NoteEditor> { backStackEntry ->
+            val route = backStackEntry.toRoute<NoteEditor>()
+            NoteEditorScreen(
+                noteId = route.noteId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable<VaultEntryEditor> { backStackEntry ->
+            val route = backStackEntry.toRoute<VaultEntryEditor>()
+            VaultEntryEditorScreen(
+                entryId = route.entryId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable<Settings> {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onExport = appActions.requestExport,
+                onShareExport = appActions.requestShareExport,
+                onImport = appActions.requestImport
+            )
         }
     }
 }

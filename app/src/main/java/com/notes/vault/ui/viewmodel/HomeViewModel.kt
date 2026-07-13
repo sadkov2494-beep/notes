@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+data class HomeUiState(
     val section: NoteSection = NoteSection.ALL_NOTES,
     val groups: List<NoteGroupEntity> = emptyList(),
     val notes: List<NoteEntity> = emptyList(),
@@ -79,7 +81,7 @@ class VaultViewModel @Inject constructor(
 
     val entries = kotlinx.coroutines.flow.flow {
         if (vaultSession.isUnlocked) {
-            emitAll(vaultRepository.observeAll())
+            emitAll(vaultRepository.observeAllEntries())
         } else {
             emit(emptyList())
         }

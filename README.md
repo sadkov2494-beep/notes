@@ -33,12 +33,15 @@
 
 ## Скачать APK
 
-**Последняя debug-сборка:**
+**Готовый debug APK (последняя сборка):**
 
-- GitHub Release: [скачать app-debug.apk](https://github.com/sadkov2494-beep/notes/releases/download/apk-latest/app-debug.apk)
-- CI-артефакт: [Actions → Build APK → notes-vault-debug](https://github.com/sadkov2494-beep/notes/actions/workflows/build-apk.yml)
+📥 **[Скачать notes-vault-debug.apk](https://github.com/sadkov2494-beep/notes/releases/download/apk-latest/app-debug.apk)** (≈36 МБ)
 
-> Ссылка на Release обновляется автоматически при каждом push в `main`. Если файл ещё не доступен — дождитесь завершения workflow **Build APK** (1–3 мин).
+Альтернативы:
+- [GitHub Releases — apk-latest](https://github.com/sadkov2494-beep/notes/releases/tag/apk-latest)
+- [CI-артефакт Build APK](https://github.com/sadkov2494-beep/notes/actions/workflows/build-apk.yml)
+
+> APK обновляется при каждом успешном билде. Установка: разрешите «Неизвестные источники» → откройте файл `.apk`.
 
 ## Сборка
 

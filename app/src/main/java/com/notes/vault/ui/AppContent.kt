@@ -52,7 +52,7 @@ fun AppContent(
     val pickImageLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { pendingImageRequest?.onResult(it) }
+        uri?.let { pendingImageRequest?.onResult?.invoke(it) }
         pendingImageRequest = null
     }
 
@@ -167,10 +167,10 @@ fun AppContent(
                     backupDialog = BackupDialogState.Hidden
                     when (state.mode) {
                         ExportMode.SAVE -> {
-                            pendingExport = password.toCharArray() to ExportMode.SAVE
+                            pendingExport = password to ExportMode.SAVE
                             createDocumentLauncher.launch("notes_backup_${System.currentTimeMillis()}.nbk")
                         }
-                        ExportMode.SHARE -> startShareExport(password.toCharArray())
+                        ExportMode.SHARE -> startShareExport(password)
                     }
                 }
             )

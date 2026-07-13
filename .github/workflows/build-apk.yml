@@ -36,11 +36,11 @@ jobs:
           if-no-files-found: error
 
       - name: Upload APK to release on main
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: APK (latest debug)
+          name: Заметки с Сейфом — debug APK
           files: app/build/outputs/apk/debug/app-debug.apk
           prerelease: true
           make_latest: true
