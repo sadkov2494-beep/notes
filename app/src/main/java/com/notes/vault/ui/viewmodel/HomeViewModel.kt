@@ -1,0 +1,258 @@
+package com.notes.vault.ui.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.fragment.app.FragmentActivity
+import com.notes.vault.data.model.NoteEntity
+import com.notes.vault.data.model.NoteGroupEntity
+import com.notes.vault.data.model.NoteSection
+import com.notes.vault.data.repository.NotesRepository
+import com.notes.vault.data.repository.VaultRepository
+import com.notes.vault.security.VaultCryptoManager
+import com.notes.vault.security.VaultSessionManager
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+/** null = all notes, -1L = ungrouped only, >0 = group id */
+typealias SelectedGroupFilter = Long?
+
+data class HomeUiState(
+    val section: NoteSection = NoteSection.ALL_NOTES,
+    val groups: List<NoteGroupEntity> = emptyList(),
+    val notes: List<NoteEntity> = emptyList(),
+    val selectedGroupId: SelectedGroupFilter = null,
+    val vaultUnlocked: Boolean = false,
+    val vaultCreated: Boolean = false,
+    val isLoading: Boolean = true
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
+@HiltViewModel
+class HomeViewModel @Inject constructor(
+    private val notesRepository: NotesRepository,
+    private val vaultSession: VaultSessionManager
+) : ViewModel() {
+
+    private val section = MutableStateFlow(NoteSection.ALL_NOTES)
+    private val selectedGroupId = MutableStateFlow<SelectedGroupFilter>(null)
+
+    private val notesFlow = selectedGroupId.flatMapLatest { filter ->
+        when {
+            filter == null -> notesRepository.observeAllNotes()
+            filter < 0 -> notesRepository.observeUngroupedNotes()
+            else -> notesRepository.observeNotesByGroup(filter)
+        }
+    }
+
+    val uiState: StateFlow<HomeUiState> = combine(
+        section,
+        notesRepository.observeGroups(),
+        notesFlow,
+        selectedGroupId
+    ) { currentSection, groups, notes, groupFilter ->
+        HomeUiState(
+            section = currentSection,
+            groups = groups,
+            notes = notes,
+            selectedGroupId = groupFilter,
+            vaultUnlocked = vaultSession.isUnlocked,
+            vaultCreated = vaultSession.isCreated,
+            isLoading = false
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HomeUiState())
+
+    val deletedNotes = notesRepository.observeDeletedNotes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setSection(newSection: NoteSection) {
+        section.value = newSection
+    }
+
+    fun selectGroup(groupId: SelectedGroupFilter) {
+        selectedGroupId.value = groupId
+    }
+
+    fun createGroup(name: String, colorArgb: Int, iconName: String, isVault: Boolean) {
+        viewModelScope.launch {
+            notesRepository.saveGroup(
+                NoteGroupEntity(
+                    name = name,
+                    colorArgb = colorArgb,
+                    iconName = iconName,
+                    isVault = isVault
+                )
+            )
+        }
+    }
+
+    fun addNoteAtTop() {
+        viewModelScope.launch {
+            val groupId = selectedGroupId.value?.takeIf { it > 0 }
+            notesRepository.saveNote(
+                NoteEntity(
+                    groupId = groupId,
+                    title = "",
+                    content = "",
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun updateDescription(noteId: Long, description: String) {
+        viewModelScope.launch {
+            val existing = notesRepository.getNote(noteId) ?: return@launch
+            notesRepository.saveNote(
+                existing.copy(
+                    title = description,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun updateContent(noteId: Long, content: String) {
+        viewModelScope.launch {
+            val existing = notesRepository.getNote(noteId) ?: return@launch
+            notesRepository.saveNote(
+                existing.copy(
+                    content = content,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun softDeleteNote(noteId: Long) {
+        viewModelScope.launch { notesRepository.softDeleteNote(noteId) }
+    }
+
+    fun hardDeleteNote(noteId: Long) {
+        viewModelScope.launch { notesRepository.deleteNote(noteId) }
+    }
+
+    fun restoreNote(noteId: Long) {
+        viewModelScope.launch { notesRepository.restoreNote(noteId) }
+    }
+
+    fun upsertNote(noteId: Long?, title: String, content: String, onSaved: (Long) -> Unit = {}) {
+        viewModelScope.launch {
+            val existing = if (noteId != null && noteId > 0) notesRepository.getNote(noteId) else null
+            val groupId = existing?.groupId ?: selectedGroupId.value?.takeIf { it > 0 }
+            val entity = (existing ?: NoteEntity(title = title, content = content, groupId = groupId)).copy(
+                title = title,
+                content = content,
+                updatedAt = System.currentTimeMillis()
+            )
+            val id = notesRepository.saveNote(entity)
+            onSaved(id)
+        }
+    }
+
+    fun deleteNote(noteId: Long) {
+        viewModelScope.launch { notesRepository.deleteNote(noteId) }
+    }
+}
+
+@HiltViewModel
+class VaultViewModel @Inject constructor(
+    private val vaultRepository: VaultRepository,
+    private val vaultSession: VaultSessionManager,
+    private val cryptoManager: VaultCryptoManager
+) : ViewModel() {
+
+    val entries = kotlinx.coroutines.flow.flow {
+        if (vaultSession.isUnlocked) {
+            emitAll(vaultRepository.observeAllEntries())
+        } else {
+            emit(emptyList())
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _unlockError = MutableStateFlow<String?>(null)
+    val unlockError = _unlockError.asStateFlow()
+
+    val isUnlocked: Boolean get() = vaultSession.isUnlocked
+    val isCreated: Boolean get() = vaultSession.isCreated
+    val usesPin: Boolean get() = vaultSession.usesPin
+    val biometricAvailable: Boolean get() = cryptoManager.isBiometricAvailable()
+    val biometricKeyValid: Boolean get() = cryptoManager.isBiometricKeyValid()
+
+    fun unlockWithPassword(password: String): Boolean {
+        val success = vaultSession.unlockWithPassword(password)
+        if (!success) {
+            _unlockError.value = if (usesPin) "Неверный PIN" else "Неверный пароль"
+        }
+        return success
+    }
+
+    fun unlockWithPin(pin: String): Boolean = unlockWithPassword(pin)
+
+    fun createVault(password: String, confirm: String, recovery: String): String? {
+        if (password.length != 4 || !password.all { it.isDigit() }) {
+            return "Задайте PIN из 4 цифр"
+        }
+        if (password != confirm) return "PIN-коды не совпадают"
+        if (recovery.length < 5) return "Фраза восстановления: мин. 5 символов"
+        if (!vaultSession.createVaultWithPin(password, recovery)) {
+            return "Не удалось создать Сейф"
+        }
+        return null
+    }
+
+    fun enableBiometric() = vaultSession.enableBiometric()
+
+    fun lock() = vaultSession.lock()
+
+    fun resetPassword(recovery: String, newPassword: String): Boolean {
+        return vaultSession.resetPassword(newPassword, recovery)
+    }
+
+    fun clearError() {
+        _unlockError.value = null
+    }
+
+    fun biometricHint(): String = "по ${cryptoManager.biometricLabel()}"
+
+    suspend fun unlockWithBiometric(activity: FragmentActivity): Boolean {
+        if (!biometricKeyValid) {
+            _unlockError.value = if (usesPin) "Биометрия недоступна. Введите PIN."
+            else "Биометрия недоступна. Введите пароль."
+            return false
+        }
+        return cryptoManager.authenticateBiometric(
+            activity = activity,
+            title = "Сейф",
+            subtitle = "Подтвердите ${cryptoManager.biometricLabel()}"
+        ).fold(
+            onSuccess = { key ->
+                if (vaultSession.unlockWithKey(key)) true
+                else {
+                    _unlockError.value = "Не удалось открыть Сейф"
+                    false
+                }
+            },
+            onFailure = {
+                if (!it.message.orEmpty().contains("cancel", ignoreCase = true) &&
+                    !it.message.orEmpty().contains("отмен", ignoreCase = true)
+                ) {
+                    _unlockError.value = it.message ?: "Ошибка биометрии"
+                }
+                false
+            }
+        )
+    }
+}
