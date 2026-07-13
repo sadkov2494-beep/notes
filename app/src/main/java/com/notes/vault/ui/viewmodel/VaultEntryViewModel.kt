@@ -37,7 +37,8 @@ class VaultEntryViewModel @Inject constructor(
         login: String,
         password: String,
         url: String,
-        comment: String
+        comment: String,
+        onSaved: () -> Unit = {}
     ) {
         viewModelScope.launch {
             val existing = if (entryId > 0) vaultRepository.getEntry(entryId) else null
@@ -51,6 +52,7 @@ class VaultEntryViewModel @Inject constructor(
                     updatedAt = System.currentTimeMillis()
                 )
             vaultRepository.saveEntry(entity)
+            onSaved()
         }
     }
 

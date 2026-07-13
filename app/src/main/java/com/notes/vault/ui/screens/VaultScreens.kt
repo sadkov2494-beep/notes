@@ -20,6 +20,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -113,16 +114,22 @@ fun VaultEntryEditorScreen(
     var comment by remember(entry) { mutableStateOf(entry?.comment ?: "") }
     var genLength by remember { mutableStateOf(16) }
 
+    fun saveAndBack() {
+        viewModel.save(service, login, password, url, comment) { onBack() }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(if (entryId > 0) "Запись" else "Новая запись") },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        viewModel.save(service, login, password, url, comment)
-                        onBack()
-                    }) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                    }
+                },
+                actions = {
+                    TextButton(onClick = ::saveAndBack) {
+                        Text("Сохранить")
                     }
                 }
             )
@@ -156,6 +163,14 @@ fun VaultEntryEditorScreen(
             OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("Ссылка") }, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(value = comment, onValueChange = { comment = it }, label = { Text("Примечание") }, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.weight(1f))
+            androidx.compose.material3.Button(
+                onClick = ::saveAndBack,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = service.isNotBlank() && password.isNotBlank()
+            ) {
+                Text("Сохранить")
+            }
         }
     }
 }

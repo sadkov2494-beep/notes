@@ -23,12 +23,17 @@ class VaultSessionManager @Inject constructor(
         return true
     }
 
+    fun unlockWithPin(pin: String): Boolean = unlockWithPassword(pin)
+
     fun createVault(password: String, recoveryPhrase: String): Boolean {
         val key = cryptoManager.createVault(password, recoveryPhrase)
         databaseProvider.openVaultDatabase(key)
         currentKey = key
         return true
     }
+
+    fun createVaultWithPin(pin: String, recoveryPhrase: String): Boolean =
+        createVault(pin, recoveryPhrase)
 
     fun unlockWithKey(key: ByteArray) {
         databaseProvider.openVaultDatabase(key)

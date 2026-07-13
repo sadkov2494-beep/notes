@@ -43,13 +43,11 @@ fun NotesNavHost(openNoteId: Long = -1L) {
     NavHost(navController = navController, startDestination = Home) {
         composable<Home> {
             HomeScreen(
-                onOpenNote = { navController.navigate(NoteEditor(it)) },
                 onOpenGroup = { groupId, isVault ->
                     navController.navigate(Group(groupId, isVault))
                 },
                 onOpenVault = { navController.navigate(VaultUnlock) },
-                onOpenSettings = { navController.navigate(Settings) },
-                onCreateNote = { navController.navigate(NoteEditor()) }
+                onOpenSettings = { navController.navigate(Settings) }
             )
         }
         composable<Group> { backStackEntry ->

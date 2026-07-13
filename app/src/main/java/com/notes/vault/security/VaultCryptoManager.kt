@@ -245,16 +245,27 @@ class VaultCryptoManager @Inject constructor(
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)
-            .setNegativeButtonText("Пароль")
+            .setAllowedAuthenticators(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    BiometricManager.Authenticators.BIOMETRIC_WEAK
+            )
+            .setNegativeButtonText("PIN-код")
             .build()
         prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
     }
 
-    fun keyToPassphrase(key: ByteArray): String {
-        return Base64.encodeToString(key, Base64.NO_WRAP)
+    fun createVaultWithPin(pin: String, recoveryPhrase: String): ByteArray {
+        return createVault(pin, recoveryPhrase)
     }
 
-    fun passphraseToKey(passphrase: String): ByteArray {
-        return Base64.decode(passphrase, Base64.NO_WRAP)
+    fun unlockWithPin(pin: String): ByteArray? = unlockWithPassword(pin)
+
+    fun biometricLabel(): String {
+        val manager = BiometricManager.from(context)
+        val face = manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK)
+        return when {
+            face == BiometricManager.BIOMETRIC_SUCCESS -> "отпечатку или лицу"
+            else -> "отпечатку пальца"
+        }
     }
 }
