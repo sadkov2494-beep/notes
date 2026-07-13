@@ -46,7 +46,7 @@ fun AppContent(
     var backupDialog by remember { mutableStateOf<BackupDialogState>(BackupDialogState.Hidden) }
     var pendingImageRequest by remember { mutableStateOf<ImagePickRequest?>(null) }
     var cameraRequest by remember { mutableStateOf<ImagePickRequest?>(null) }
-    var pendingExportPassword by remember { mutableStateOf<CharArray?>(null) }
+    var pendingExport by remember { mutableStateOf<Pair<CharArray, ExportMode>?>(null) }
     var pendingImportFile by remember { mutableStateOf<File?>(null) }
 
     val pickImageLauncher = rememberLauncherForActivityResult(
@@ -59,11 +59,11 @@ fun AppContent(
     val createDocumentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/x-nbk")
     ) { uri: Uri? ->
-        val password = pendingExportPassword
-        if (uri != null && password != null) {
+        val export = pendingExport
+        if (uri != null && export != null) {
             scope.launch {
                 val tempFile = File(context.cacheDir, "export_${System.currentTimeMillis()}.nbk")
-                val result = settingsViewModel.export(tempFile, password)
+                val result = settingsViewModel.export(tempFile, export.first)
                 result.onSuccess {
                     context.contentResolver.openOutputStream(uri)?.use { out ->
                         tempFile.inputStream().use { input -> input.copyTo(out) }
@@ -77,7 +77,7 @@ fun AppContent(
                         isError = true
                     )
                 }
-                pendingExportPassword = null
+                pendingExport = null
             }
         }
     }
@@ -106,15 +106,33 @@ fun AppContent(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    fun startShareExport(password: CharArray) {
+        scope.launch {
+            val exportDir = File(context.cacheDir, "export").apply { mkdirs() }
+            val tempFile = File(exportDir, "notes_backup_${System.currentTimeMillis()}.nbk")
+            val result = settingsViewModel.export(tempFile, password)
+            result.onSuccess {
+                shareBackupFile(context, tempFile)
+                backupDialog = BackupDialogState.Message("Архив готов к отправке")
+            }.onFailure {
+                tempFile.delete()
+                backupDialog = BackupDialogState.Message(
+                    it.message ?: "Ошибка экспорта",
+                    isError = true
+                )
+            }
+        }
+    }
+
     val appActions = AppActions(
         pickImageFromGallery = { request ->
             pendingImageRequest = request
             pickImageLauncher.launch("image/*")
         },
         takePhotoWithCamera = { request -> cameraRequest = request },
-        requestExport = { backupDialog = BackupDialogState.ExportPassword },
+        requestExport = { backupDialog = BackupDialogState.ExportPassword(ExportMode.SAVE) },
         requestImport = { openDocumentLauncher.launch(arrayOf("application/x-nbk", "*/*")) },
-        requestShareExport = { backupDialog = BackupDialogState.ExportPassword }
+        requestShareExport = { backupDialog = BackupDialogState.ExportPassword(ExportMode.SHARE) }
     )
 
     CompositionLocalProvider(LocalAppActions provides appActions) {
@@ -143,12 +161,17 @@ fun AppContent(
 
         when (val state = backupDialog) {
             BackupDialogState.Hidden -> Unit
-            BackupDialogState.ExportPassword -> ExportPasswordDialog(
+            is BackupDialogState.ExportPassword -> ExportPasswordDialog(
                 onDismiss = { backupDialog = BackupDialogState.Hidden },
                 onConfirm = { password ->
-                    pendingExportPassword = password
                     backupDialog = BackupDialogState.Hidden
-                    createDocumentLauncher.launch("notes_backup_${System.currentTimeMillis()}.nbk")
+                    when (state.mode) {
+                        ExportMode.SAVE -> {
+                            pendingExport = password.toCharArray() to ExportMode.SAVE
+                            createDocumentLauncher.launch("notes_backup_${System.currentTimeMillis()}.nbk")
+                        }
+                        ExportMode.SHARE -> startShareExport(password.toCharArray())
+                    }
                 }
             )
             BackupDialogState.ImportPassword -> ImportPasswordDialog(

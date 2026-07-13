@@ -21,7 +21,7 @@ val LocalAppActions = compositionLocalOf { AppActions() }
 
 sealed class BackupDialogState {
     data object Hidden : BackupDialogState()
-    data object ExportPassword : BackupDialogState()
+    data class ExportPassword(val mode: ExportMode) : BackupDialogState()
     data object ImportPassword : BackupDialogState()
     data class ImportMode(val file: java.io.File, val password: CharArray) : BackupDialogState()
     data class Message(val text: String, val isError: Boolean = false) : BackupDialogState()

@@ -31,6 +31,15 @@
 - **Тесты**: unit-тесты для криптографии, генератора паролей, Markdown и Room
 - **Тема**: авто / светлая / тёмная, динамические цвета Android 12+
 
+## Скачать APK
+
+**Последняя debug-сборка:**
+
+- GitHub Release: [скачать app-debug.apk](https://github.com/sadkov2494-beep/notes/releases/download/apk-latest/app-debug.apk)
+- CI-артефакт: [Actions → Build APK → notes-vault-debug](https://github.com/sadkov2494-beep/notes/actions/workflows/build-apk.yml)
+
+> Ссылка на Release обновляется автоматически при каждом push в `main`. Если файл ещё не доступен — дождитесь завершения workflow **Build APK** (1–3 мин).
+
 ## Сборка
 
 1. Откройте проект в Android Studio Hedgehog или новее

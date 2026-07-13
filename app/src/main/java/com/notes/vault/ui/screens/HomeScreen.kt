@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -32,10 +33,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
+import com.notes.vault.ui.components.AnimatedFingerprintIcon
+import com.notes.vault.ui.components.BiometricState
+import kotlinx.coroutines.launch
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.notes.vault.data.model.NoteSection
@@ -180,13 +186,16 @@ fun VaultUnlockScreen(
     viewModel: com.notes.vault.ui.viewmodel.VaultViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val error by viewModel.unlockError.collectAsStateWithLifecycle()
+    var biometricState by remember { mutableStateOf(BiometricState.IDLE) }
 
     if (!viewModel.isCreated) {
         LaunchedEffect(Unit) { onSetup() }
         return
     }
 
+    val showBiometric = viewModel.biometricAvailable && viewModel.biometricKeyValid
     var password = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
 
     Scaffold(
@@ -197,10 +206,41 @@ fun VaultUnlockScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(24.dp),
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
         ) {
-            Text("Введите мастер-пароль", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(16.dp))
+            if (showBiometric) {
+                AnimatedFingerprintIcon(
+                    state = biometricState,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        val activity = context as? FragmentActivity ?: return@OutlinedButton
+                        scope.launch {
+                            biometricState = BiometricState.IDLE
+                            val success = viewModel.unlockWithBiometric(activity)
+                            biometricState = if (success) BiometricState.SUCCESS else BiometricState.ERROR
+                            if (success) {
+                                onUnlocked()
+                            } else {
+                                val vibrator = context.getSystemService(Vibrator::class.java)
+                                vibrator?.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE))
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Fingerprint, contentDescription = null)
+                    Text("Вход по отпечатку", modifier = Modifier.padding(start = 8.dp))
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("или введите мастер-пароль", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(16.dp))
+            } else {
+                Text("Введите мастер-пароль", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(16.dp))
+            }
             OutlinedTextField(
                 value = password.value,
                 onValueChange = { password.value = it },

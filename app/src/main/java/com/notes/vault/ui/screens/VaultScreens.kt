@@ -165,6 +165,7 @@ fun VaultEntryEditorScreen(
 fun SettingsScreen(
     onBack: () -> Unit,
     onExport: () -> Unit,
+    onShareExport: () -> Unit,
     onImport: () -> Unit,
     viewModel: com.notes.vault.ui.viewmodel.SettingsViewModel = hiltViewModel()
 ) {
@@ -202,7 +203,11 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(24.dp))
             androidx.compose.material3.Button(onClick = onExport, modifier = Modifier.fillMaxWidth()) {
-                Text("Экспорт (.nbk)")
+                Text("Сохранить локально (.nbk)")
+            }
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.material3.OutlinedButton(onClick = onShareExport, modifier = Modifier.fillMaxWidth()) {
+                Text("Поделиться (.nbk)")
             }
             Spacer(Modifier.height(8.dp))
             androidx.compose.material3.OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) {

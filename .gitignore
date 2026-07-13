@@ -17,3 +17,6 @@ gen/
 out/
 .navigation/
 google-services.json
+*.apk
+notes-vault-debug.apk
+local.properties

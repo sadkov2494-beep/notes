@@ -2,6 +2,7 @@ package com.notes.vault.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.fragment.app.FragmentActivity
 import com.notes.vault.data.model.NoteEntity
 import com.notes.vault.data.model.NoteGroupEntity
 import com.notes.vault.data.model.NoteSection
@@ -116,5 +117,26 @@ class VaultViewModel @Inject constructor(
 
     fun clearError() {
         _unlockError.value = null
+    }
+
+    suspend fun unlockWithBiometric(activity: FragmentActivity): Boolean {
+        if (!biometricKeyValid) {
+            _unlockError.value = "Биометрия недоступна. Введите пароль."
+            return false
+        }
+        return cryptoManager.authenticateBiometric(
+            activity = activity,
+            title = "Сейф",
+            subtitle = "Подтвердите отпечаток пальца"
+        ).fold(
+            onSuccess = { key ->
+                vaultSession.unlockWithKey(key)
+                true
+            },
+            onFailure = {
+                _unlockError.value = it.message ?: "Ошибка биометрии"
+                false
+            }
+        )
     }
 }

@@ -122,6 +122,7 @@ fun NotesNavHost(openNoteId: Long = -1L) {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onExport = appActions.requestExport,
+                    onShareExport = appActions.requestShareExport,
                     onImport = appActions.requestImport
                 )
             }
