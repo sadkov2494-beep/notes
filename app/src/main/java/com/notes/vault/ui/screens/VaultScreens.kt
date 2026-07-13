@@ -17,6 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -185,6 +186,7 @@ fun SettingsScreen(
     viewModel: com.notes.vault.ui.viewmodel.SettingsViewModel = hiltViewModel()
 ) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val colorStyle by viewModel.colorStyle.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -199,7 +201,8 @@ fun SettingsScreen(
         }
     ) { padding ->
         Column(Modifier.padding(padding).padding(16.dp)) {
-            Text("Тема")
+            Text("Тема", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
             com.notes.vault.data.model.ThemeMode.entries.forEach { mode ->
                 androidx.compose.material3.FilterChip(
                     selected = themeMode == mode,
@@ -214,6 +217,25 @@ fun SettingsScreen(
                         )
                     },
                     modifier = Modifier.padding(end = 8.dp)
+                )
+            }
+            Spacer(Modifier.height(20.dp))
+            Text("Цвет приложения", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            val styles = listOf(
+                com.notes.vault.data.model.ColorStyle.WARM_BROWN to "Тёплый коричневый",
+                com.notes.vault.data.model.ColorStyle.HONEY to "Медовый",
+                com.notes.vault.data.model.ColorStyle.FOREST to "Лесной",
+                com.notes.vault.data.model.ColorStyle.SKY to "Небесный",
+                com.notes.vault.data.model.ColorStyle.BERRY to "Ягодный",
+                com.notes.vault.data.model.ColorStyle.SYSTEM to "Системный (Monet)"
+            )
+            styles.forEach { (style, label) ->
+                androidx.compose.material3.FilterChip(
+                    selected = colorStyle == style,
+                    onClick = { viewModel.setColorStyle(style) },
+                    label = { Text(label) },
+                    modifier = Modifier.padding(end = 8.dp, bottom = 8.dp)
                 )
             }
             Spacer(Modifier.height(24.dp))

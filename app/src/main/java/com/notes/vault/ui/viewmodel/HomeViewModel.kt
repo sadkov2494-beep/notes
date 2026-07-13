@@ -85,6 +85,19 @@ class HomeViewModel @Inject constructor(
         return savedId
     }
 
+    fun upsertNote(noteId: Long?, title: String, content: String, onSaved: (Long) -> Unit = {}) {
+        viewModelScope.launch {
+            val existing = if (noteId != null && noteId > 0) notesRepository.getNote(noteId) else null
+            val entity = (existing ?: NoteEntity(title = title, content = content)).copy(
+                title = title,
+                content = content,
+                updatedAt = System.currentTimeMillis()
+            )
+            val id = notesRepository.saveNote(entity)
+            onSaved(id)
+        }
+    }
+
     fun deleteNote(noteId: Long) {
         viewModelScope.launch { notesRepository.deleteNote(noteId) }
     }
@@ -110,12 +123,15 @@ class VaultViewModel @Inject constructor(
 
     val isUnlocked: Boolean get() = vaultSession.isUnlocked
     val isCreated: Boolean get() = vaultSession.isCreated
+    val usesPin: Boolean get() = vaultSession.usesPin
     val biometricAvailable: Boolean get() = cryptoManager.isBiometricAvailable()
     val biometricKeyValid: Boolean get() = cryptoManager.isBiometricKeyValid()
 
     fun unlockWithPassword(password: String): Boolean {
         val success = vaultSession.unlockWithPassword(password)
-        if (!success) _unlockError.value = "Неверный PIN"
+        if (!success) {
+            _unlockError.value = if (usesPin) "Неверный PIN" else "Неверный пароль"
+        }
         return success
     }
 
@@ -127,7 +143,9 @@ class VaultViewModel @Inject constructor(
         }
         if (password != confirm) return "PIN-коды не совпадают"
         if (recovery.length < 5) return "Фраза восстановления: мин. 5 символов"
-        vaultSession.createVaultWithPin(password, recovery)
+        if (!vaultSession.createVaultWithPin(password, recovery)) {
+            return "Не удалось создать Сейф"
+        }
         return null
     }
 
@@ -147,7 +165,8 @@ class VaultViewModel @Inject constructor(
 
     suspend fun unlockWithBiometric(activity: FragmentActivity): Boolean {
         if (!biometricKeyValid) {
-            _unlockError.value = "Биометрия недоступна. Введите PIN."
+            _unlockError.value = if (usesPin) "Биометрия недоступна. Введите PIN."
+            else "Биометрия недоступна. Введите пароль."
             return false
         }
         return cryptoManager.authenticateBiometric(
@@ -156,11 +175,13 @@ class VaultViewModel @Inject constructor(
             subtitle = "Подтвердите ${cryptoManager.biometricLabel()}"
         ).fold(
             onSuccess = { key ->
-                vaultSession.unlockWithKey(key)
-                true
+                if (vaultSession.unlockWithKey(key)) true
+                else {
+                    _unlockError.value = "Не удалось открыть Сейф"
+                    false
+                }
             },
             onFailure = {
-                // User cancelled or chose PIN — don't vibrate loudly for cancel
                 if (!it.message.orEmpty().contains("cancel", ignoreCase = true) &&
                     !it.message.orEmpty().contains("отмен", ignoreCase = true)
                 ) {

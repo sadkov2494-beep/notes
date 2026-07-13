@@ -3,37 +3,35 @@ package com.notes.vault.ui.screens
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,8 +41,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -57,14 +56,9 @@ import com.notes.vault.ui.components.NoteCard
 import com.notes.vault.ui.components.PinPad
 import com.notes.vault.ui.components.SectionToggle
 import com.notes.vault.ui.viewmodel.HomeViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-private data class InlineEditorState(
-    val noteId: Long? = null,
-    val title: String = "",
-    val content: String = ""
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,8 +70,7 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showGroupDialog by remember { mutableStateOf(false) }
-    var editor by remember { mutableStateOf<InlineEditorState?>(null) }
-    val narrow = LocalConfiguration.current.screenWidthDp < 700
+    var draftingNew by remember { mutableStateOf(false) }
 
     if (showGroupDialog) {
         CreateGroupDialog(
@@ -105,10 +98,8 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            if (uiState.section == NoteSection.ALL_NOTES && editor == null) {
-                FloatingActionButton(onClick = {
-                    editor = InlineEditorState()
-                }) {
+            if (uiState.section == NoteSection.ALL_NOTES) {
+                FloatingActionButton(onClick = { draftingNew = true }) {
                     Icon(Icons.Default.Add, contentDescription = "Добавить")
                 }
             }
@@ -129,63 +120,76 @@ fun HomeScreen(
             )
 
             if (uiState.section == NoteSection.ALL_NOTES) {
-                val currentEditor = editor
-                if (narrow && currentEditor != null) {
-                    // На узком экране редактор занимает всю область меню
-                    InlineNoteEditorPane(
-                        state = currentEditor,
-                        onStateChange = { editor = it },
-                        onSave = {
-                            viewModel.saveQuickNote(
-                                currentEditor.title,
-                                currentEditor.content,
-                                currentEditor.noteId
-                            )
-                            editor = null
-                        },
-                        onClose = { editor = null }
-                    )
-                } else {
-                    Row(modifier = Modifier.fillMaxSize()) {
-                        Column(
-                            modifier = Modifier
-                                .weight(if (currentEditor != null) 0.45f else 1f)
-                                .fillMaxHeight()
-                        ) {
-                            NotesListPane(
-                                notes = uiState.notes,
-                                groups = uiState.groups,
-                                selectedNoteId = currentEditor?.noteId,
-                                onOpenGroup = { onOpenGroup(it, false) },
-                                onOpenNote = { note ->
-                                    editor = InlineEditorState(
-                                        noteId = note.id,
-                                        title = note.title,
-                                        content = note.content
-                                    )
-                                }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (uiState.groups.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Группы",
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                             )
                         }
-
-                        if (currentEditor != null) {
-                            VerticalDivider()
-                            Box(modifier = Modifier.weight(0.55f).fillMaxHeight()) {
-                                InlineNoteEditorPane(
-                                    state = currentEditor,
-                                    onStateChange = { editor = it },
-                                    onSave = {
-                                        viewModel.saveQuickNote(
-                                            currentEditor.title,
-                                            currentEditor.content,
-                                            currentEditor.noteId
-                                        )
-                                        editor = null
-                                    },
-                                    onClose = { editor = null }
-                                )
-                            }
+                        items(uiState.groups, key = { "g-${it.id}" }) { group ->
+                            NoteCard(
+                                title = group.name,
+                                subtitle = "Группа",
+                                onClick = { onOpenGroup(group.id, false) },
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                        item {
+                            Text(
+                                "Заметки",
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                            )
                         }
                     }
+
+                    if (draftingNew) {
+                        item(key = "draft") {
+                            InlineNoteRow(
+                                noteId = null,
+                                initialTitle = "",
+                                initialContent = "",
+                                onCommit = { id, title, content ->
+                                    viewModel.upsertNote(id, title, content) {
+                                        draftingNew = false
+                                    }
+                                },
+                                onDelete = { draftingNew = false }
+                            )
+                        }
+                    }
+
+                    items(uiState.notes, key = { it.id }) { note ->
+                        InlineNoteRow(
+                            noteId = note.id,
+                            initialTitle = note.title,
+                            initialContent = note.content,
+                            onCommit = { id, title, content ->
+                                viewModel.upsertNote(id, title, content)
+                            },
+                            onDelete = { noteId ->
+                                if (noteId != null) viewModel.deleteNote(noteId)
+                            }
+                        )
+                    }
+
+                    if (uiState.notes.isEmpty() && !draftingNew) {
+                        item {
+                            Text(
+                                "Нажмите + и пишите прямо здесь",
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    item { Spacer(Modifier.height(88.dp)) }
                 }
             }
         }
@@ -193,123 +197,89 @@ fun HomeScreen(
 }
 
 @Composable
-private fun NotesListPane(
-    notes: List<NoteEntity>,
-    groups: List<com.notes.vault.data.model.NoteGroupEntity>,
-    selectedNoteId: Long?,
-    onOpenGroup: (Long) -> Unit,
-    onOpenNote: (NoteEntity) -> Unit
+private fun InlineNoteRow(
+    noteId: Long?,
+    initialTitle: String,
+    initialContent: String,
+    onCommit: (noteId: Long?, title: String, content: String) -> Unit,
+    onDelete: (noteId: Long?) -> Unit
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        if (groups.isNotEmpty()) {
-            item {
-                Text(
-                    "Группы",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-            }
-            items(groups, key = { "g-${it.id}" }) { group ->
-                NoteCard(
-                    title = group.name,
-                    subtitle = "Группа",
-                    onClick = { onOpenGroup(group.id) },
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-            }
-            item {
-                Text(
-                    "Все заметки",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-            }
-        }
-        if (notes.isEmpty()) {
-            item {
-                Text(
-                    "Нет заметок — нажмите + справа",
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-        } else {
-            items(notes, key = { it.id }) { note ->
-                val selected = note.id == selectedNoteId
-                NoteCard(
-                    title = note.title,
-                    subtitle = note.content,
-                    onClick = { onOpenNote(note) },
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .then(
-                            if (selected) Modifier.padding(start = 4.dp) else Modifier
-                        )
-                )
-            }
-        }
-        item { Spacer(Modifier.height(72.dp)) }
-    }
-}
+    var title by remember(noteId, initialTitle) { mutableStateOf(initialTitle) }
+    var content by remember(noteId, initialContent) { mutableStateOf(initialContent) }
+    val scope = rememberCoroutineScope()
+    var saveJob by remember { mutableStateOf<Job?>(null) }
 
-@Composable
-private fun InlineNoteEditorPane(
-    state: InlineEditorState,
-    onStateChange: (InlineEditorState) -> Unit,
-    onSave: () -> Unit,
-    onClose: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (state.noteId != null) "Заметка" else "Новая заметка",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onSave) {
-                Icon(Icons.Default.Save, contentDescription = "Сохранить")
-            }
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Закрыть")
+    fun scheduleSave() {
+        saveJob?.cancel()
+        saveJob = scope.launch {
+            delay(450)
+            if (title.isNotBlank() || content.isNotBlank()) {
+                onCommit(noteId, title, content)
             }
         }
-        HorizontalDivider()
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = state.title,
-            onValueChange = { onStateChange(state.copy(title = it)) },
-            label = { Text("Заголовок") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = state.content,
-            onValueChange = { onStateChange(state.copy(content = it)) },
-            label = { Text("Текст") },
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            minLines = 8
-        )
-        Spacer(Modifier.height(8.dp))
-        androidx.compose.material3.Button(
-            onClick = onSave,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Default.Save, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Сохранить")
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = {
+                        title = it
+                        scheduleSave()
+                    },
+                    placeholder = { Text("Заголовок") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { focus ->
+                            if (!focus.isFocused) scheduleSave()
+                        },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                        focusedBorderColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+                IconButton(onClick = {
+                    saveJob?.cancel()
+                    onDelete(noteId)
+                }) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Удалить",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            OutlinedTextField(
+                value = content,
+                onValueChange = {
+                    content = it
+                    scheduleSave()
+                },
+                placeholder = { Text("Текст заметки…") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focus ->
+                        if (!focus.isFocused) scheduleSave()
+                    },
+                minLines = 2,
+                maxLines = 8,
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                    focusedBorderColor = MaterialTheme.colorScheme.primary
+                )
+            )
         }
     }
 }
@@ -326,24 +296,27 @@ fun VaultUnlockScreen(
     val error by viewModel.unlockError.collectAsStateWithLifecycle()
     var biometricState by remember { mutableStateOf(BiometricState.IDLE) }
     var pin by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var biometricTried by remember { mutableStateOf(false) }
-    var showLegacyPassword by remember { mutableStateOf(false) }
-    var legacyPassword by remember { mutableStateOf("") }
 
     if (!viewModel.isCreated) {
         LaunchedEffect(Unit) { onSetup() }
         return
     }
 
+    val usePin = viewModel.usesPin
     val showBiometric = viewModel.biometricAvailable && viewModel.biometricKeyValid
 
-    fun tryUnlock(code: String) {
-        if (viewModel.unlockWithPin(code)) {
-            onUnlocked()
-        } else {
+    fun vibrate() {
+        val vibrator = context.getSystemService(Vibrator::class.java)
+        vibrator?.vibrate(VibrationEffect.createOneShot(80, VibrationEffect.DEFAULT_AMPLITUDE))
+    }
+
+    fun tryPassword(value: String) {
+        if (viewModel.unlockWithPassword(value)) onUnlocked()
+        else {
             pin = ""
-            val vibrator = context.getSystemService(Vibrator::class.java)
-            vibrator?.vibrate(VibrationEffect.createOneShot(80, VibrationEffect.DEFAULT_AMPLITUDE))
+            vibrate()
         }
     }
 
@@ -354,7 +327,7 @@ fun VaultUnlockScreen(
             val success = viewModel.unlockWithBiometric(activity)
             biometricState = if (success) BiometricState.SUCCESS else BiometricState.ERROR
             if (success) {
-                delay(150)
+                delay(120)
                 onUnlocked()
             }
         }
@@ -363,7 +336,7 @@ fun VaultUnlockScreen(
     LaunchedEffect(showBiometric) {
         if (showBiometric && !biometricTried) {
             biometricTried = true
-            delay(300)
+            delay(250)
             launchBiometric()
         }
     }
@@ -392,57 +365,60 @@ fun VaultUnlockScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.Fingerprint, contentDescription = null)
-                    Text(
-                        "Повторить биометрию",
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
+                    Text("Повторить биометрию", modifier = Modifier.padding(start = 8.dp))
                 }
                 Spacer(Modifier.height(16.dp))
-                Text("или введите PIN", style = MaterialTheme.typography.bodyMedium)
-            } else {
-                Text("Введите PIN-код", style = MaterialTheme.typography.titleLarge)
             }
-            Spacer(Modifier.height(12.dp))
-            PinPad(
-                pin = pin,
-                pinLength = 4,
-                onPinChange = {
-                    pin = it
-                    viewModel.clearError()
-                },
-                onComplete = { tryUnlock(it) },
-                modifier = Modifier.fillMaxWidth(0.9f)
-            )
+
+            if (usePin) {
+                Text("Введите PIN-код", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                PinPad(
+                    pin = pin,
+                    pinLength = 4,
+                    onPinChange = {
+                        pin = it
+                        viewModel.clearError()
+                    },
+                    onComplete = { tryPassword(it) },
+                    modifier = Modifier.fillMaxWidth(0.9f)
+                )
+            } else {
+                Text("Введите мастер-пароль", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = {
+                        password = it
+                        viewModel.clearError()
+                    },
+                    label = { Text("Мастер-пароль") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(Modifier.height(12.dp))
+                androidx.compose.material3.Button(
+                    onClick = { tryPassword(password) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = password.isNotBlank()
+                ) {
+                    Text("Разблокировать")
+                }
+                Text(
+                    "Сейф был создан с паролем. PIN появится после пересоздания Сейфа.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
+
             error?.let {
                 Text(
                     it,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(top = 8.dp)
                 )
-            }
-            TextButton(onClick = { showLegacyPassword = !showLegacyPassword }) {
-                Text(if (showLegacyPassword) "Скрыть пароль" else "Старый мастер-пароль")
-            }
-            if (showLegacyPassword) {
-                OutlinedTextField(
-                    value = legacyPassword,
-                    onValueChange = { legacyPassword = it },
-                    label = { Text("Мастер-пароль") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                androidx.compose.material3.Button(
-                    onClick = {
-                        if (viewModel.unlockWithPassword(legacyPassword)) onUnlocked()
-                        else {
-                            val vibrator = context.getSystemService(Vibrator::class.java)
-                            vibrator?.vibrate(
-                                VibrationEffect.createOneShot(80, VibrationEffect.DEFAULT_AMPLITUDE)
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Разблокировать") }
             }
         }
     }

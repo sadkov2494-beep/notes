@@ -20,6 +20,20 @@ enum class ThemeMode {
     DARK
 }
 
+enum class ColorStyle {
+    SYSTEM,
+    WARM_BROWN,
+    HONEY,
+    FOREST,
+    SKY,
+    BERRY
+}
+
+enum class VaultUnlockMode {
+    PASSWORD,
+    PIN
+}
+
 enum class ImportMode {
     REPLACE,
     MERGE

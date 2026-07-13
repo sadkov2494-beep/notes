@@ -123,7 +123,11 @@ fun ThemedNavHost(
     settingsViewModel: SettingsViewModel = hiltViewModel()
 ) {
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
-    com.notes.vault.ui.theme.NotesVaultTheme(themeMode = themeMode) {
+    val colorStyle by settingsViewModel.colorStyle.collectAsStateWithLifecycle()
+    com.notes.vault.ui.theme.NotesVaultTheme(
+        themeMode = themeMode,
+        colorStyle = colorStyle
+    ) {
         NotesNavHost(openNoteId = openNoteId)
     }
 }

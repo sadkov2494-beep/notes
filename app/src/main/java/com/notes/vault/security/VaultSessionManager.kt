@@ -15,10 +15,11 @@ class VaultSessionManager @Inject constructor(
 
     val isUnlocked: Boolean get() = databaseProvider.isVaultOpen()
     val isCreated: Boolean get() = cryptoManager.isVaultCreated()
+    val usesPin: Boolean get() = cryptoManager.usesPin()
 
     fun unlockWithPassword(password: String): Boolean {
         val key = cryptoManager.unlockWithPassword(password) ?: return false
-        databaseProvider.openVaultDatabase(key)
+        if (databaseProvider.openVaultDatabase(key) == null) return false
         currentKey = key
         return true
     }
@@ -27,7 +28,7 @@ class VaultSessionManager @Inject constructor(
 
     fun createVault(password: String, recoveryPhrase: String): Boolean {
         val key = cryptoManager.createVault(password, recoveryPhrase)
-        databaseProvider.openVaultDatabase(key)
+        if (databaseProvider.openVaultDatabase(key) == null) return false
         currentKey = key
         return true
     }
@@ -35,9 +36,10 @@ class VaultSessionManager @Inject constructor(
     fun createVaultWithPin(pin: String, recoveryPhrase: String): Boolean =
         createVault(pin, recoveryPhrase)
 
-    fun unlockWithKey(key: ByteArray) {
-        databaseProvider.openVaultDatabase(key)
+    fun unlockWithKey(key: ByteArray): Boolean {
+        if (databaseProvider.openVaultDatabase(key) == null) return false
         currentKey = key
+        return true
     }
 
     fun enableBiometric(): Boolean {
@@ -54,10 +56,13 @@ class VaultSessionManager @Inject constructor(
 
     fun resetPassword(newPassword: String, recoveryPhrase: String): Boolean {
         val key = cryptoManager.resetPassword(newPassword, recoveryPhrase) ?: return false
+        cryptoManager.setUnlockMode(
+            if (newPassword.length == 4 && newPassword.all { it.isDigit() }) "PIN" else "PASSWORD"
+        )
         if (databaseProvider.isVaultOpen()) {
             databaseProvider.rekeyVault(key)
         } else {
-            databaseProvider.openVaultDatabase(key)
+            if (databaseProvider.openVaultDatabase(key) == null) return false
         }
         currentKey = key
         return true

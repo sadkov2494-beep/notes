@@ -24,8 +24,19 @@ class SettingsViewModel @Inject constructor(
     val themeMode = settingsRepository.themeMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.AUTO)
 
+    val colorStyle = settingsRepository.colorStyle
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            com.notes.vault.data.model.ColorStyle.WARM_BROWN
+        )
+
     fun setTheme(mode: ThemeMode) {
         viewModelScope.launch { settingsRepository.setThemeMode(mode) }
+    }
+
+    fun setColorStyle(style: com.notes.vault.data.model.ColorStyle) {
+        viewModelScope.launch { settingsRepository.setColorStyle(style) }
     }
 
     suspend fun export(file: File, password: CharArray): Result<Unit> {

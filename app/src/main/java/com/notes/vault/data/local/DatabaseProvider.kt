@@ -2,6 +2,7 @@ package com.notes.vault.data.local
 
 import android.content.Context
 import androidx.room.Room
+import dagger.hilt.android.qualifiers.ApplicationContext
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SupportFactory
 import java.io.File
@@ -10,7 +11,7 @@ import javax.inject.Singleton
 
 @Singleton
 class DatabaseProvider @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) {
     @Volatile
     private var notesDatabase: NotesDatabase? = null
@@ -31,10 +32,29 @@ class DatabaseProvider @Inject constructor(
         }
     }
 
-    fun openVaultDatabase(key: ByteArray): VaultDatabase {
-        vaultKey = key
-        return vaultDatabase ?: synchronized(this) {
-            vaultDatabase ?: buildVaultDatabase(key).also { vaultDatabase = it }
+    /**
+     * Opens vault DB only after verifying the key. Returns null on wrong key
+     * instead of leaving a half-open encrypted database that later crashes.
+     */
+    fun openVaultDatabase(key: ByteArray): VaultDatabase? {
+        if (vaultDatabase != null && vaultKey.contentEquals(key)) {
+            return vaultDatabase
+        }
+        closeVault()
+        return synchronized(this) {
+            try {
+                val db = buildVaultDatabase(key)
+                // Force open + verify passphrase before advertising unlocked state
+                db.openHelper.readableDatabase.query("SELECT count(*) FROM sqlite_master").use { cursor ->
+                    if (!cursor.moveToFirst()) throw IllegalStateException("empty master table")
+                }
+                vaultKey = key
+                vaultDatabase = db
+                db
+            } catch (_: Exception) {
+                closeVault()
+                null
+            }
         }
     }
 
@@ -43,15 +63,19 @@ class DatabaseProvider @Inject constructor(
     fun isVaultOpen(): Boolean = vaultDatabase != null
 
     fun closeVault() {
-        vaultDatabase?.close()
+        try {
+            vaultDatabase?.close()
+        } catch (_: Exception) {
+        }
         vaultDatabase = null
         vaultKey = null
     }
 
     fun rekeyVault(newKey: ByteArray) {
         val db = vaultDatabase ?: return
-        val passphrase = VaultKeyHolder.keyToSqlCipherPassphrase(newKey)
-        db.openHelper.writableDatabase.query("PRAGMA rekey = '$passphrase'").close()
+        val passphrase = String(VaultKeyHolder.keyToSqlCipherPassphrase(newKey), Charsets.ISO_8859_1)
+            .replace("'", "''")
+        db.openHelper.writableDatabase.execSQL("PRAGMA rekey = '$passphrase'")
         vaultKey = newKey
     }
 
@@ -76,7 +100,5 @@ class DatabaseProvider @Inject constructor(
 }
 
 object VaultKeyHolder {
-    fun keyToSqlCipherPassphrase(key: ByteArray): ByteArray {
-        return key
-    }
+    fun keyToSqlCipherPassphrase(key: ByteArray): ByteArray = key
 }

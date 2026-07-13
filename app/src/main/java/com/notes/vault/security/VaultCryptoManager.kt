@@ -33,6 +33,7 @@ class VaultCryptoManager @Inject constructor(
         private const val KEY_BIOMETRIC_WRAPPED = "vault_biometric_wrapped"
         private const val KEY_BIOMETRIC_IV = "vault_biometric_iv"
         private const val KEY_VAULT_CREATED = "vault_created"
+        private const val KEY_UNLOCK_MODE = "vault_unlock_mode"
         private const val KEY_DEVICE_BOOT_COUNT = "device_boot_count"
         private const val BIOMETRIC_KEY_ALIAS = "notes_vault_biometric_key"
     }
@@ -87,8 +88,22 @@ class VaultCryptoManager @Inject constructor(
         saveSalt(salt)
         saveRecoveryHash(hashRecoveryPhrase(recoveryPhrase))
         markVaultCreated()
+        setUnlockMode(
+            if (password.length == 4 && password.all { it.isDigit() }) "PIN" else "PASSWORD"
+        )
         return key
     }
+
+    fun setUnlockMode(mode: String) {
+        encryptedPrefs.edit().putString(KEY_UNLOCK_MODE, mode).apply()
+    }
+
+    fun getUnlockMode(): String {
+        return encryptedPrefs.getString(KEY_UNLOCK_MODE, null)
+            ?: "PASSWORD" // old installs used master password
+    }
+
+    fun usesPin(): Boolean = getUnlockMode() == "PIN"
 
     fun unlockWithPassword(password: String): ByteArray? {
         val salt = getSalt() ?: return null
