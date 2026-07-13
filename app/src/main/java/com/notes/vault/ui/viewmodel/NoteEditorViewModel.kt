@@ -11,7 +11,12 @@ import com.notes.vault.data.repository.AttachmentStorage
 import com.notes.vault.data.repository.NotesRepository
 import com.notes.vault.worker.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
@@ -19,6 +24,7 @@ import kotlinx.serialization.json.Json
 import java.util.UUID
 import javax.inject.Inject
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class NoteEditorViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -27,28 +33,24 @@ class NoteEditorViewModel @Inject constructor(
     private val reminderScheduler: ReminderScheduler
 ) : ViewModel() {
 
-    private val noteId: Long = savedStateHandle.get<Long>("noteId") ?: 0L
+    private val initialNoteId: Long = savedStateHandle.get<Long>("noteId") ?: 0L
     private val json = Json { ignoreUnknownKeys = true }
 
-    val note = if (noteId > 0) {
-        notesRepository.observeNote(noteId)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-    } else {
-        kotlinx.coroutines.flow.MutableStateFlow(
-            NoteEntity(title = "", content = "")
-        )
-    }
+    private val _currentNoteId = MutableStateFlow(initialNoteId)
+    val currentNoteId = _currentNoteId.asStateFlow()
 
-    val attachments = if (noteId > 0) {
-        notesRepository.observeAttachments(noteId)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    } else {
-        kotlinx.coroutines.flow.MutableStateFlow(emptyList<AttachmentEntity>())
-    }
+    val note = _currentNoteId.flatMapLatest { id ->
+        if (id > 0) notesRepository.observeNote(id) else flowOf(NoteEntity(title = "", content = ""))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val attachments = _currentNoteId.flatMapLatest { id ->
+        if (id > 0) notesRepository.observeAttachments(id) else flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun save(title: String, content: String, checklistJson: String?, reminderAt: Long?) {
         viewModelScope.launch {
-            val existing = if (noteId > 0) notesRepository.getNote(noteId) else null
+            val id = _currentNoteId.value
+            val existing = if (id > 0) notesRepository.getNote(id) else null
             val entity = (existing ?: NoteEntity(title = title, content = content)).copy(
                 title = title,
                 content = content,
@@ -57,26 +59,28 @@ class NoteEditorViewModel @Inject constructor(
                 reminderAt = reminderAt,
                 updatedAt = System.currentTimeMillis()
             )
-            val id = notesRepository.saveNote(entity)
+            val savedId = notesRepository.saveNote(entity)
+            _currentNoteId.value = savedId
             if (reminderAt != null) {
-                reminderScheduler.schedule(id, title.ifBlank { "Заметка" }, reminderAt)
-            } else if (noteId > 0) {
-                reminderScheduler.cancel(noteId)
+                reminderScheduler.schedule(savedId, title.ifBlank { "Заметка" }, reminderAt)
+            } else if (id > 0) {
+                reminderScheduler.cancel(id)
             }
         }
     }
 
-    fun addAttachment(uri: Uri, currentNoteId: Long, onSaved: (Long) -> Unit) {
+    fun onImagePicked(uri: Uri) {
         viewModelScope.launch {
-            val count = notesRepository.attachmentCount(currentNoteId)
+            val id = _currentNoteId.value
+            val count = if (id > 0) notesRepository.attachmentCount(id) else 0
             if (count >= AttachmentStorage.MAX_ATTACHMENTS) return@launch
-            var id = currentNoteId
-            if (id <= 0) {
-                id = notesRepository.saveNote(NoteEntity(title = "", content = ""))
+            var noteId = id
+            if (noteId <= 0) {
+                noteId = notesRepository.saveNote(NoteEntity(title = "", content = ""))
+                _currentNoteId.value = noteId
             }
-            val attachment = attachmentStorage.saveCompressedImage(uri, id) ?: return@launch
+            val attachment = attachmentStorage.saveCompressedImage(uri, noteId) ?: return@launch
             notesRepository.saveAttachment(attachment)
-            onSaved(id)
         }
     }
 

@@ -15,10 +15,7 @@ import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
-import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.PBEKeySpec
-import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -37,8 +34,6 @@ class VaultCryptoManager @Inject constructor(
         private const val KEY_VAULT_CREATED = "vault_created"
         private const val KEY_DEVICE_BOOT_COUNT = "device_boot_count"
         private const val BIOMETRIC_KEY_ALIAS = "notes_vault_biometric_key"
-        private const val PBKDF2_ITERATIONS = 100_000
-        private const val KEY_LENGTH = 256
     }
 
     private val encryptedPrefs by lazy {
@@ -80,16 +75,10 @@ class VaultCryptoManager @Inject constructor(
         return stored == hashRecoveryPhrase(phrase)
     }
 
-    fun hashRecoveryPhrase(phrase: String): String {
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        return Base64.encodeToString(digest.digest(phrase.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
-    }
+    fun hashRecoveryPhrase(phrase: String): String = CryptoUtils.hashRecoveryPhrase(phrase)
 
-    fun deriveKeyFromPassword(password: String, salt: ByteArray): ByteArray {
-        val spec = PBEKeySpec(password.toCharArray(), salt, PBKDF2_ITERATIONS, KEY_LENGTH)
-        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        return factory.generateSecret(spec).encoded
-    }
+    fun deriveKeyFromPassword(password: String, salt: ByteArray): ByteArray =
+        CryptoUtils.deriveKeyFromPassword(password, salt)
 
     fun createVault(password: String, recoveryPhrase: String): ByteArray {
         val salt = ByteArray(32).also { SecureRandom().nextBytes(it) }

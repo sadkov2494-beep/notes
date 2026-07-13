@@ -1,5 +1,13 @@
 package com.notes.vault.ui.screens
 
+import android.net.Uri
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.rememberSharedContentState
+import androidx.compose.animation.sharedElement
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,10 +22,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,30 +50,47 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.notes.vault.data.model.ChecklistItem
+import com.notes.vault.ui.LocalAppActions
 import com.notes.vault.ui.components.ChecklistItemRow
 import com.notes.vault.ui.viewmodel.NoteEditorViewModel
 import com.notes.vault.util.MarkdownHelper
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun NoteEditorScreen(
     noteId: Long,
     onBack: () -> Unit,
-    onPickImage: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
     viewModel: NoteEditorViewModel = hiltViewModel()
 ) {
     val note by viewModel.note.collectAsStateWithLifecycle()
     val attachments by viewModel.attachments.collectAsStateWithLifecycle()
+    val currentNoteId by viewModel.currentNoteId.collectAsStateWithLifecycle()
+    val appActions = LocalAppActions.current
 
     var title by remember(note) { mutableStateOf(note?.title ?: "") }
     var content by remember(note) { mutableStateOf(note?.content ?: "") }
     var isChecklist by remember(note) { mutableStateOf(note?.isChecklist == true) }
+    var showAttachMenu by remember { mutableStateOf(false) }
     val checklistItems = remember(note) {
         mutableStateListOf<ChecklistItem>().apply {
             note?.checklistJson?.let { json ->
                 addAll(MarkdownHelper.parseChecklist(json))
             }
         }
+    }
+
+    val titleModifier = if (noteId > 0) {
+        with(sharedTransitionScope) {
+            Modifier.sharedElement(
+                rememberSharedContentState(key = "note-card-$noteId"),
+                animatedVisibilityScope = animatedVisibilityScope,
+                boundsTransform = { _, _ -> spring(stiffness = Spring.StiffnessMediumLow) }
+            )
+        }
+    } else {
+        Modifier
     }
 
     Scaffold(
@@ -79,11 +107,37 @@ fun NoteEditorScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onPickImage) {
-                        Icon(Icons.Default.Image, contentDescription = "Фото")
+                    IconButton(onClick = { showAttachMenu = true }) {
+                        Icon(Icons.Default.Image, contentDescription = "Вложения")
+                    }
+                    DropdownMenu(expanded = showAttachMenu, onDismissRequest = { showAttachMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Галерея") },
+                            onClick = {
+                                showAttachMenu = false
+                                appActions.pickImageFromGallery(
+                                    com.notes.vault.ui.ImagePickRequest(currentNoteId) { uri ->
+                                        viewModel.onImagePicked(uri)
+                                    }
+                                )
+                            },
+                            leadingIcon = { Icon(Icons.Default.Image, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Камера") },
+                            onClick = {
+                                showAttachMenu = false
+                                appActions.takePhotoWithCamera(
+                                    com.notes.vault.ui.ImagePickRequest(currentNoteId) { uri ->
+                                        viewModel.onImagePicked(uri)
+                                    }
+                                )
+                            },
+                            leadingIcon = { Icon(Icons.Default.CameraAlt, contentDescription = null) }
+                        )
                     }
                     IconButton(onClick = { isChecklist = !isChecklist }) {
-                        Icon(Icons.Default.Notifications, contentDescription = "Чек-лист")
+                        Icon(Icons.Default.Checklist, contentDescription = "Чек-лист")
                     }
                 }
             )
@@ -99,7 +153,7 @@ fun NoteEditorScreen(
                 value = title,
                 onValueChange = { title = it },
                 label = { Text("Заголовок") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().then(titleModifier)
             )
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

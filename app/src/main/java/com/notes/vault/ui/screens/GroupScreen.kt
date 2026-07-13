@@ -1,5 +1,8 @@
 package com.notes.vault.ui.screens
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -24,13 +27,15 @@ import com.notes.vault.data.model.VaultEntryEntity
 import com.notes.vault.ui.components.NoteCard
 import com.notes.vault.ui.viewmodel.GroupDetailViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun GroupScreen(
     groupId: Long,
     isVault: Boolean,
     onBack: () -> Unit,
     onOpenNote: (Long) -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
     viewModel: GroupDetailViewModel = hiltViewModel()
 ) {
     Scaffold(
@@ -50,16 +55,25 @@ fun GroupScreen(
             VaultGroupList(entries, padding, onOpenNote)
         } else {
             val notes by viewModel.observeNotes(groupId).collectAsStateWithLifecycle(emptyList())
-            NotesGroupList(notes, padding, onOpenNote)
+            NotesGroupList(
+                notes,
+                padding,
+                onOpenNote,
+                sharedTransitionScope,
+                animatedVisibilityScope
+            )
         }
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun NotesGroupList(
     notes: List<NoteEntity>,
     padding: androidx.compose.foundation.layout.PaddingValues,
-    onOpenNote: (Long) -> Unit
+    onOpenNote: (Long) -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
@@ -70,7 +84,10 @@ private fun NotesGroupList(
                 title = note.title,
                 subtitle = note.content,
                 onClick = { onOpenNote(note.id) },
-                modifier = Modifier.padding(horizontal = 16.dp)
+                modifier = Modifier.padding(horizontal = 16.dp),
+                noteId = note.id,
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope
             )
         }
     }
