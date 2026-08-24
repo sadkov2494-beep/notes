@@ -13,6 +13,9 @@
   var RESULT_ZOOM = 16;
   var NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
   var STUB_LOADING_DELAY_MS = 900;
+  // Nominatim: не более 1 запроса в секунду
+  var NOMINATIM_MIN_INTERVAL_MS = 1100;
+  var lastGeocodeRequestAt = 0;
 
   // ===== DOM-элементы =====
   var form = document.getElementById("search-form");
@@ -99,44 +102,239 @@
   }
 
   /**
+   * Пауза на указанное время.
+   * @param {number} ms
+   * @returns {Promise<void>}
+   */
+  function delay(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  /**
+   * Соблюдение лимита Nominatim: 1 запрос в секунду.
+   * @returns {Promise<void>}
+   */
+  function waitForGeocoderSlot() {
+    var now = Date.now();
+    var waitMs = NOMINATIM_MIN_INTERVAL_MS - (now - lastGeocodeRequestAt);
+
+    if (waitMs > 0) {
+      return delay(waitMs);
+    }
+
+    return Promise.resolve();
+  }
+
+  /**
+   * Нормализация введённого адреса.
+   * @param {string} address
+   * @returns {string}
+   */
+  function normalizeAddress(address) {
+    return address
+      .replace(/\s+/g, " ")
+      .replace(/\s*,\s*/g, ", ")
+      .trim();
+  }
+
+  /**
+   * Проверка, похож ли ввод на координаты (широта, долгота).
+   * @param {string} query
+   * @returns {{lat: number, lon: number}|null}
+   */
+  function parseCoordinates(query) {
+    var match = query.match(/^(-?\d+(?:\.\d+)?)\s*[,;]\s*(-?\d+(?:\.\d+)?)$/);
+
+    if (!match) {
+      return null;
+    }
+
+    var lat = parseFloat(match[1]);
+    var lon = parseFloat(match[2]);
+
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      return null;
+    }
+
+    return { lat: lat, lon: lon };
+  }
+
+  /**
+   * Варианты запроса для повышения шанса нахождения адреса.
+   * @param {string} address
+   * @returns {string[]}
+   */
+  function buildSearchQueries(address) {
+    var queries = [address];
+    var lower = address.toLowerCase();
+
+    if (lower.indexOf("россия") === -1 && lower.indexOf("russia") === -1) {
+      queries.push(address + ", Россия");
+    }
+
+    // Без запятых иногда ищется лучше для коротких адресов
+    if (address.indexOf(",") !== -1) {
+      queries.push(address.replace(/,\s*/g, " "));
+    }
+
+    // Убираем дубликаты, сохраняя порядок
+    return queries.filter(function (item, index, list) {
+      return list.indexOf(item) === index;
+    });
+  }
+
+  /**
+   * Один запрос к Nominatim.
+   * @param {string} query
+   * @returns {Promise<Array>}
+   */
+  function fetchNominatim(query) {
+    var params = new URLSearchParams({
+      format: "json",
+      q: query,
+      limit: "5",
+      addressdetails: "1",
+      "accept-language": "ru",
+      countrycodes: "ru"
+    });
+
+    var url = NOMINATIM_URL + "?" + params.toString();
+
+    return waitForGeocoderSlot().then(function () {
+      lastGeocodeRequestAt = Date.now();
+
+      return fetch(url, {
+        method: "GET",
+        headers: {
+          Accept: "application/json"
+        }
+      });
+    }).then(function (response) {
+      if (response.status === 429) {
+        throw new Error(
+          "Слишком много запросов к геокодеру. Подождите пару секунд и попробуйте снова."
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error("Сервер геокодера вернул ошибку: " + response.status);
+      }
+
+      return response.json();
+    }).then(function (data) {
+      if (!Array.isArray(data)) {
+        return [];
+      }
+
+      return data;
+    });
+  }
+
+  /**
+   * Выбор наиболее подходящего результата из списка.
+   * @param {Array} results
+   * @param {string} originalQuery
+   * @returns {object|null}
+   */
+  function pickBestResult(results, originalQuery) {
+    if (!results.length) {
+      return null;
+    }
+
+    var queryLower = originalQuery.toLowerCase();
+
+    // Предпочитаем здания и адреса, а не только регион/город целиком
+    var ranked = results
+      .map(function (place) {
+        var score = place.importance || 0;
+        var type = place.type || "";
+        var className = place.class || "";
+        var displayName = (place.display_name || "").toLowerCase();
+
+        if (className === "building" || type === "house" || type === "commercial") {
+          score += 0.2;
+        }
+
+        if (className === "highway" || type === "residential") {
+          score += 0.05;
+        }
+
+        if (className === "boundary" && (type === "administrative" || type === "state")) {
+          score -= 0.15;
+        }
+
+        if (queryLower && displayName.indexOf(queryLower.split(",")[0].trim()) !== -1) {
+          score += 0.1;
+        }
+
+        return { place: place, score: score };
+      })
+      .sort(function (a, b) {
+        return b.score - a.score;
+      });
+
+    return ranked[0].place;
+  }
+
+  /**
    * Запрос к геокодеру Nominatim по текстовому адресу.
    * @param {string} query — адрес для поиска
    * @returns {Promise<{lat: number, lon: number, displayName: string}>}
    */
   function geocodeAddress(query) {
-    var params = new URLSearchParams({
-      format: "json",
-      q: query,
-      limit: "1",
-      addressdetails: "0"
-    });
+    var normalized = normalizeAddress(query);
+    var coordinates = parseCoordinates(normalized);
 
-    var url = NOMINATIM_URL + "?" + params.toString();
-
-    return fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json"
-      }
-    })
-      .then(function (response) {
-        if (!response.ok) {
-          throw new Error("Сервер геокодера вернул ошибку: " + response.status);
-        }
-        return response.json();
-      })
-      .then(function (data) {
-        if (!Array.isArray(data) || data.length === 0) {
-          throw new Error("Адрес не найден. Проверьте правильность написания.");
-        }
-
-        var place = data[0];
-        return {
-          lat: parseFloat(place.lat),
-          lon: parseFloat(place.lon),
-          displayName: place.display_name || query
-        };
+    if (coordinates) {
+      return Promise.resolve({
+        lat: coordinates.lat,
+        lon: coordinates.lon,
+        displayName: coordinates.lat.toFixed(6) + ", " + coordinates.lon.toFixed(6)
       });
+    }
+
+    var queries = buildSearchQueries(normalized);
+
+    function tryQuery(index) {
+      if (index >= queries.length) {
+        throw new Error(
+          "Адрес не найден. Укажите город и улицу, например: «Москва, Тверская улица, 1»."
+        );
+      }
+
+      return fetchNominatim(queries[index]).then(function (results) {
+        var place = pickBestResult(results, normalized);
+
+        if (place) {
+          return {
+            lat: parseFloat(place.lat),
+            lon: parseFloat(place.lon),
+            displayName: place.display_name || normalized
+          };
+        }
+
+        // Пустой ответ часто означает лимит запросов — повторяем ту же фразу
+        return delay(NOMINATIM_MIN_INTERVAL_MS).then(function () {
+          return fetchNominatim(queries[index]);
+        }).then(function (retryResults) {
+          place = pickBestResult(retryResults, normalized);
+
+          if (place) {
+            return {
+              lat: parseFloat(place.lat),
+              lon: parseFloat(place.lon),
+              displayName: place.display_name || normalized
+            };
+          }
+
+          return tryQuery(index + 1);
+        });
+      });
+    }
+
+    return tryQuery(0);
   }
 
   /**
