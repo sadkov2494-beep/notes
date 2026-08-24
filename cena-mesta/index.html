@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Цена места — анализ коммерческой локации</title>
+
+  <!-- Стили Leaflet -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  >
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header__brand">
+        <span class="header__logo" aria-hidden="true">📍</span>
+        <div>
+          <h1 class="header__title">Цена места</h1>
+          <p class="header__subtitle">Анализ коммерческой локации по адресу</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="search" aria-label="Поиск адреса">
+        <form class="search__form" id="search-form" novalidate>
+          <label class="search__label" for="address-input">Адрес</label>
+          <div class="search__controls">
+            <input
+              class="search__input"
+              type="text"
+              id="address-input"
+              name="address"
+              placeholder="Например: Москва, Тверская улица, 1"
+              autocomplete="street-address"
+              required
+            >
+            <button class="btn btn--primary" type="submit" id="analyze-btn">
+              Анализировать
+            </button>
+            <button class="btn btn--secondary" type="button" id="geolocation-btn">
+              Моё местоположение
+            </button>
+          </div>
+        </form>
+        <p class="message message--error" id="error-message" role="alert" hidden></p>
+      </section>
+
+      <section class="map-section" aria-label="Карта">
+        <div id="map" class="map"></div>
+      </section>
+
+      <section class="results" aria-label="Результаты анализа">
+        <h2 class="results__title">Результаты анализа</h2>
+        <p class="results__hint" id="results-hint">
+          Введите адрес и нажмите «Анализировать», чтобы получить оценку локации.
+        </p>
+
+        <div class="results__grid" id="results-grid" hidden>
+          <article class="card" id="card-traffic">
+            <div class="card__icon" aria-hidden="true">🚶</div>
+            <h3 class="card__title">Пешеходный трафик</h3>
+            <p class="card__value" id="value-traffic">—</p>
+            <p class="card__desc" id="desc-traffic">Оценка проходимости в сутки</p>
+          </article>
+
+          <article class="card" id="card-rent">
+            <div class="card__icon" aria-hidden="true">🏢</div>
+            <h3 class="card__title">Средняя арендная ставка</h3>
+            <p class="card__value" id="value-rent">—</p>
+            <p class="card__desc" id="desc-rent">Коммерческая недвижимость, ₽/м² в месяц</p>
+          </article>
+
+          <article class="card" id="card-competitors">
+            <div class="card__icon" aria-hidden="true">🏪</div>
+            <h3 class="card__title">Конкуренты</h3>
+            <p class="card__value" id="value-competitors">—</p>
+            <p class="card__desc" id="desc-competitors">Похожие точки в радиусе 500 м</p>
+          </article>
+
+          <article class="card" id="card-cadastre">
+            <div class="card__icon" aria-hidden="true">📋</div>
+            <h3 class="card__title">Кадастровая стоимость</h3>
+            <p class="card__value" id="value-cadastre">—</p>
+            <p class="card__desc" id="desc-cadastre">Ориентировочная оценка участка</p>
+          </article>
+        </div>
+
+        <p class="results__disclaimer">
+          Данные анализа являются демонстрационными заглушками. Реальный сервер аналитики пока не подключён.
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>Карта: OpenStreetMap · Геокодер: Nominatim · © 2026 Цена места</p>
+    </footer>
+  </div>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script src="script.js"></script>
+</body>
+</html>
