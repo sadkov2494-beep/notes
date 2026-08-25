@@ -16,6 +16,8 @@
   var STUB_LOADING_DELAY_MS = 700;
   var NOMINATIM_MIN_INTERVAL_MS = 1100;
   var lastGeocodeRequestAt = 0;
+  var STORAGE_KEY = "cena-mesta-saved-v1";
+  var MAX_SAVED = 10;
 
   var BUSINESS_PRESETS = {
     cafe: {
@@ -152,6 +154,16 @@
   var businessReport = document.getElementById("business-report");
   var printReportBtn = document.getElementById("print-report-btn");
   var copyReportBtn = document.getElementById("copy-report-btn");
+  var saveCalcBtn = document.getElementById("save-calc-btn");
+  var exportExcelBtn = document.getElementById("export-excel-btn");
+  var compareSection = document.getElementById("compare-section");
+  var savedList = document.getElementById("saved-list");
+  var compareWrap = document.getElementById("compare-wrap");
+  var compareThead = document.getElementById("compare-thead");
+  var compareTbody = document.getElementById("compare-tbody");
+  var exportCompareBtn = document.getElementById("export-compare-btn");
+  var clearSavedBtn = document.getElementById("clear-saved-btn");
+  var sourcesContent = document.getElementById("sources-content");
 
   var valueTraffic = document.getElementById("value-traffic");
   var valueRent = document.getElementById("value-rent");
@@ -198,6 +210,7 @@
   var radiusCircle = null;
   var competitorLayer = null;
   var currentAnalysis = null;
+  var savedAnalyses = [];
 
   function initMap() {
     map = L.map("map", {
@@ -845,6 +858,7 @@
       };
 
       refreshCalculations();
+      enableAnalysisActions(true);
       return currentAnalysis;
     });
   }
@@ -941,6 +955,364 @@
     });
   }
 
+  function readAllCalcValues() {
+    var values = {};
+    Object.keys(calcInputs).forEach(function (key) {
+      values[key] = readCalcInput(calcInputs[key]);
+    });
+    return values;
+  }
+
+  function writeCalcValues(values) {
+    Object.keys(values).forEach(function (key) {
+      if (calcInputs[key]) {
+        calcInputs[key].value = values[key];
+      }
+    });
+  }
+
+  function enableAnalysisActions(enabled) {
+    saveCalcBtn.disabled = !enabled;
+    exportExcelBtn.disabled = !enabled;
+  }
+
+  function loadSavedFromStorage() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      savedAnalyses = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(savedAnalyses)) savedAnalyses = [];
+    } catch (e) {
+      savedAnalyses = [];
+    }
+    renderSavedList();
+    renderComparisonTable();
+  }
+
+  function persistSaved() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(savedAnalyses));
+    renderSavedList();
+    renderComparisonTable();
+  }
+
+  function buildSnapshot() {
+    if (!currentAnalysis) return null;
+    return {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      savedAt: new Date().toISOString(),
+      address: currentAnalysis.place.displayName,
+      businessType: getBusinessType(),
+      businessLabel: currentAnalysis.metrics.businessLabel,
+      radiusMeters: currentAnalysis.metrics.radiusMeters,
+      place: currentAnalysis.place,
+      metrics: currentAnalysis.metrics,
+      score: currentAnalysis.score,
+      finances: currentAnalysis.finances,
+      calc: readAllCalcValues()
+    };
+  }
+
+  function handleSaveCalculation() {
+    if (!currentAnalysis) return;
+    var snapshot = buildSnapshot();
+    var duplicate = savedAnalyses.find(function (item) {
+      return item.address === snapshot.address &&
+        item.businessType === snapshot.businessType &&
+        item.radiusMeters === snapshot.radiusMeters;
+    });
+
+    if (duplicate) {
+      var index = savedAnalyses.indexOf(duplicate);
+      savedAnalyses[index] = snapshot;
+    } else {
+      savedAnalyses.unshift(snapshot);
+      if (savedAnalyses.length > MAX_SAVED) {
+        savedAnalyses = savedAnalyses.slice(0, MAX_SAVED);
+      }
+    }
+
+    persistSaved();
+    compareSection.hidden = false;
+    saveCalcBtn.textContent = "Сохранено!";
+    setTimeout(function () {
+      saveCalcBtn.textContent = "Сохранить расчёт";
+    }, 1500);
+  }
+
+  function handleLoadSaved(id) {
+    var item = savedAnalyses.find(function (s) { return s.id === id; });
+    if (!item) return;
+
+    addressInput.value = item.address;
+    businessTypeSelect.value = item.businessType;
+    radiusSelect.value = String(item.radiusMeters);
+
+    setMapLocation(item.place.lat, item.place.lon, item.address, item.radiusMeters);
+    resultsSection.hidden = false;
+    calculatorSection.hidden = false;
+    reportSection.hidden = false;
+    compareSection.hidden = false;
+    resultsAddress.textContent = item.address;
+
+    currentAnalysis = {
+      place: item.place,
+      metrics: item.metrics,
+      score: item.score,
+      finances: item.finances
+    };
+
+    writeCalcValues(item.calc);
+    fillResults(item.metrics, item.score);
+    updateFinanceDisplay(item.finances);
+    businessReport.innerHTML = generateBusinessReport(
+      item.place,
+      item.metrics,
+      item.score,
+      item.finances
+    );
+    enableAnalysisActions(true);
+    window.scrollTo({ top: resultsSection.offsetTop - 16, behavior: "smooth" });
+  }
+
+  function handleDeleteSaved(id) {
+    savedAnalyses = savedAnalyses.filter(function (s) { return s.id !== id; });
+    persistSaved();
+  }
+
+  function handleClearSaved() {
+    if (!savedAnalyses.length) return;
+    if (!window.confirm("Удалить все сохранённые расчёты?")) return;
+    savedAnalyses = [];
+    persistSaved();
+    compareSection.hidden = true;
+  }
+
+  function renderSavedList() {
+    var hasItems = savedAnalyses.length > 0;
+    compareSection.hidden = !hasItems && !currentAnalysis;
+    exportCompareBtn.disabled = !hasItems;
+    clearSavedBtn.disabled = !hasItems;
+
+    if (!hasItems) {
+      savedList.innerHTML = '<p class="saved-list__empty">Пока нет сохранённых расчётов. Проанализируйте адрес и нажмите «Сохранить расчёт».</p>';
+      compareWrap.hidden = true;
+      return;
+    }
+
+    savedList.innerHTML = savedAnalyses.map(function (item) {
+      var date = new Date(item.savedAt).toLocaleString("ru-RU");
+      return (
+        '<article class="saved-item">' +
+        '<div class="saved-item__info">' +
+        '<p class="saved-item__title">' + escapeHtml(item.address) + '</p>' +
+        '<p class="saved-item__meta">' + escapeHtml(item.businessLabel) + ' · ' +
+        formatRadiusLabel(item.radiusMeters) + ' · Оценка ' + item.score + '/100 · ' + date + '</p>' +
+        '</div>' +
+        '<div class="saved-item__actions">' +
+        '<button class="btn btn--secondary btn--small" type="button" data-action="load" data-id="' + item.id + '">Открыть</button>' +
+        '<button class="btn btn--danger btn--small" type="button" data-action="delete" data-id="' + item.id + '">Удалить</button>' +
+        '</div>' +
+        '</article>'
+      );
+    }).join("");
+
+    savedList.querySelectorAll("button[data-action]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-id");
+        if (btn.getAttribute("data-action") === "load") {
+          handleLoadSaved(id);
+        } else {
+          handleDeleteSaved(id);
+        }
+      });
+    });
+  }
+
+  function getCompareRows() {
+    return [
+      { key: "score", label: "Оценка локации", format: function (v) { return v + "/100"; }, higherBetter: true },
+      { key: "traffic", label: "Трафик, чел./день", format: function (v) { return formatNumber(v); }, higherBetter: true },
+      { key: "competitors", label: "Конкуренты", format: function (v) { return v + " шт."; }, higherBetter: false },
+      { key: "rent", label: "Аренда, ₽/м²", format: function (v) { return formatMoney(v); }, higherBetter: false },
+      { key: "monthlyRevenue", label: "Выручка / мес", format: function (v) { return formatMoney(v); }, higherBetter: true },
+      { key: "monthlyProfit", label: "Прибыль / мес", format: function (v) { return formatMoney(v); }, higherBetter: true },
+      { key: "totalInvestment", label: "Вложения", format: function (v) { return formatMoney(v); }, higherBetter: false },
+      { key: "paybackMonths", label: "Окупаемость, мес", format: function (v) {
+        if (v === null || v === undefined) return "—";
+        if (v > 120) return "> 120";
+        return v.toFixed(1);
+      }, higherBetter: false },
+      { key: "roi", label: "ROI за год, %", format: function (v) { return v.toFixed(1) + "%"; }, higherBetter: true }
+    ];
+  }
+
+  function getCompareValue(item, key) {
+    if (key === "score") return item.score;
+    if (key === "traffic") return item.metrics.traffic;
+    if (key === "competitors") return item.metrics.competitors;
+    if (key === "rent") return item.metrics.rent;
+    if (key === "monthlyRevenue") return item.finances.monthlyRevenue;
+    if (key === "monthlyProfit") return item.finances.monthlyProfit;
+    if (key === "totalInvestment") return item.finances.totalInvestment;
+    if (key === "paybackMonths") return item.finances.paybackMonths;
+    if (key === "roi") return item.finances.roi;
+    return null;
+  }
+
+  function renderComparisonTable() {
+    if (!savedAnalyses.length) {
+      compareWrap.hidden = true;
+      return;
+    }
+
+    compareWrap.hidden = false;
+    var rows = getCompareRows();
+
+    compareThead.innerHTML =
+      "<tr><th class=\"compare-table__metric\">Показатель</th>" +
+      savedAnalyses.map(function (item, index) {
+        var short = item.address.split(",")[0];
+        return "<th>#" + (index + 1) + "<br><small>" + escapeHtml(short) + "</small></th>";
+      }).join("") +
+      "</tr>";
+
+    compareTbody.innerHTML = rows.map(function (row) {
+      var values = savedAnalyses.map(function (item) {
+        return getCompareValue(item, row.key);
+      });
+
+      var best = null;
+      var numeric = values.filter(function (v) { return typeof v === "number" && !isNaN(v); });
+      if (numeric.length) {
+        best = row.higherBetter ? Math.max.apply(null, numeric) : Math.min.apply(null, numeric);
+      }
+
+      return (
+        "<tr><th class=\"compare-table__metric\">" + row.label + "</th>" +
+        savedAnalyses.map(function (item, i) {
+          var val = values[i];
+          var text = row.format(val);
+          var isBest = typeof val === "number" && best !== null && val === best && savedAnalyses.length > 1;
+          return "<td" + (isBest ? " class=\"compare-table__best\"" : "") + ">" + text + "</td>";
+        }).join("") +
+        "</tr>"
+      );
+    }).join("");
+  }
+
+  function csvEscape(value) {
+    var str = value == null ? "" : String(value);
+    if (str.indexOf(";") !== -1 || str.indexOf("\"") !== -1 || str.indexOf("\n") !== -1) {
+      return "\"" + str.replace(/"/g, "\"\"") + "\"";
+    }
+    return str;
+  }
+
+  function downloadCsv(filename, rows) {
+    var bom = "\uFEFF";
+    var body = rows.map(function (row) {
+      return row.map(csvEscape).join(";");
+    }).join("\n");
+    var blob = new Blob([bom + body], { type: "text/csv;charset=utf-8;" });
+    var link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function exportCurrentToExcel() {
+    if (!currentAnalysis) return;
+    var m = currentAnalysis.metrics;
+    var f = currentAnalysis.finances;
+    var c = readAllCalcValues();
+    var rows = [
+      ["Параметр", "Значение"],
+      ["Адрес", currentAnalysis.place.displayName],
+      ["Тип бизнеса", m.businessLabel],
+      ["Радиус", formatRadiusLabel(m.radiusMeters)],
+      ["Оценка локации", currentAnalysis.score + "/100"],
+      ["Трафик, чел./день", Math.round(m.traffic)],
+      ["Конкуренты", m.competitors],
+      ["Аренда, ₽/м²", Math.round(m.rent)],
+      ["Кадастр, млн ₽", m.cadastre.toFixed(1)],
+      ["Площадь, м²", c.area],
+      ["Средний чек, ₽", c.avgCheck],
+      ["Конверсия, %", c.conversion],
+      ["Выручка / мес, ₽", Math.round(f.monthlyRevenue)],
+      ["Расходы / мес, ₽", Math.round(f.monthlyOpex)],
+      ["Прибыль / мес, ₽", Math.round(f.monthlyProfit)],
+      ["Маржа, %", f.margin.toFixed(1)],
+      ["Вложения, ₽", Math.round(f.totalInvestment)],
+      ["Окупаемость, мес", f.paybackMonths ? f.paybackMonths.toFixed(1) : "—"],
+      ["ROI за год, %", f.roi.toFixed(1)]
+    ];
+    downloadCsv("cena-mesta-" + Date.now() + ".csv", rows);
+  }
+
+  function exportComparisonToExcel() {
+    if (!savedAnalyses.length) return;
+    var rows = [["Показатель"].concat(savedAnalyses.map(function (item, i) {
+      return "#" + (i + 1) + " " + item.address;
+    }))];
+
+    getCompareRows().forEach(function (row) {
+      rows.push([row.label].concat(savedAnalyses.map(function (item) {
+        return row.format(getCompareValue(item, row.key));
+      })));
+    });
+
+    downloadCsv("cena-mesta-sravnenie-" + Date.now() + ".csv", rows);
+  }
+
+  function renderApiSourcesGuide() {
+    sourcesContent.innerHTML =
+      "<p class=\"sources-note\">" +
+      "Сейчас сайт работает <strong>без сервера и без платных ключей</strong>. " +
+      "Конкуренты — реальные (OpenStreetMap). Трафик, аренда и кадастр — математические оценки по координатам, " +
+      "потому что эти данные в России не отдаются бесплатно через браузер напрямую." +
+      "</p>" +
+
+      "<h3>Почему не подключено сразу</h3>" +
+      "<ul>" +
+      "<li><strong>Пешеходный трафик</strong> — коммерческие данные Яндекса, Т-Банка, Сбера. Публичного бесплатного API нет.</li>" +
+      "<li><strong>Аренда</strong> — актуальные ставки у ЦИАН, Авито, агентств. API платные или требуют партнёрского договора.</li>" +
+      "<li><strong>Кадастр</strong> — официальные данные Росреестра/ЕГРН. Прямой доступ только через аккредитованных посредников.</li>" +
+      "<li><strong>Безопасность</strong> — платные ключи нельзя хранить в открытом JS на GitHub Pages, нужен свой бэкенд-прокси.</li>" +
+      "</ul>" +
+
+      "<h3>Как подключить: пошагово</h3>" +
+      "<ol>" +
+      "<li>Создать простой бэкенд (Node.js / Python) — он хранит API-ключи и отдаёт данные фронту.</li>" +
+      "<li>Подключить геокодер и кадастр через DaData или Контур.</li>" +
+      "<li>Для трафика — интеграция с Яндекс Геоаналитикой (B2B) или ручной импорт CSV из их веб-интерфейса.</li>" +
+      "<li>Для аренды — парсинг/партнёрство с ЦИАН Commercial API или собственная база объявлений.</li>" +
+      "</ol>" +
+
+      "<h3>Ориентировочная стоимость API</h3>" +
+      "<table class=\"sources-table\">" +
+      "<thead><tr><th>Данные</th><th>Провайдер</th><th>Цена</th><th>Комментарий</th></tr></thead>" +
+      "<tbody>" +
+      "<tr><td>Кадастровый номер</td><td><a href=\"https://dadata.ru/api/cadastre-clean/\" target=\"_blank\" rel=\"noopener\">DaData</a></td><td>~0,20 ₽/запрос</td><td>100 запросов бесплатно, нужен бэкенд</td></tr>" +
+      "<tr><td>Кадастр + контур</td><td><a href=\"https://www.newdb.net/realty/nspd_cadastr\" target=\"_blank\" rel=\"noopener\">NewDB</a></td><td>~2 ₽/запрос</td><td>Координаты, границы участка</td></tr>" +
+      "<tr><td>Стандартизация адреса</td><td><a href=\"https://dadata.ru/api/\" target=\"_blank\" rel=\"noopener\">DaData</a></td><td>от 0 ₽ (10k/день)</td><td>Тариф «Лёгкий» бесплатный для старта</td></tr>" +
+      "<tr><td>Пешеходный трафик</td><td><a href=\"https://yandex.ru/geoanalytics/\" target=\"_blank\" rel=\"noopener\">Яндекс Геоаналитика</a></td><td>0 ₽ (веб)</td><td>16 городов, вручную; API — по запросу в B2B</td></tr>" +
+      "<tr><td>API Яндекс Карт</td><td><a href=\"https://yandex.ru/maps-api/\" target=\"_blank\" rel=\"noopener\">Яндекс Карты</a></td><td>от ~20 800 ₽/мес</td><td>Карты, геокодер, организации — не трафик</td></tr>" +
+      "<tr><td>Коммерческая аренда</td><td>ЦИАН / NF Group / JLL</td><td>от 30 000 ₽/мес</td><td>Только по договору, цена индивидуальна</td></tr>" +
+      "<tr><td>Конкуренты</td><td>OpenStreetMap</td><td>0 ₽</td><td>Уже подключено (Overpass)</td></tr>" +
+      "</tbody></table>" +
+
+      "<h3>Минимальный бюджет для «реальных» данных</h3>" +
+      "<ul>" +
+      "<li><strong>Старт (MVP):</strong> 0–3 000 ₽/мес — DaData бесплатный тариф + OSM + ручной ввод аренды из ЦИАН.</li>" +
+      "<li><strong>Базовый продукт:</strong> 5 000–15 000 ₽/мес — DaData кадастр + хостинг бэкенда + периодический импорт аренды.</li>" +
+      "<li><strong>Полноценный сервис:</strong> 50 000–200 000 ₽/мес — Яндекс B2B, коммерческая аренда, выделенный сервер, кэширование.</li>" +
+      "</ul>" +
+
+      "<p>Для вашего проекта логичный следующий шаг — небольшой бэкенд-прокси и DaData для кадастра/адреса. " +
+      "Трафик и аренду можно подтягивать постепенно: сначала ручной ввод пользователем (уже есть в калькуляторе), " +
+      "потом автоматизация.</p>";
+  }
+
   function bindCalcListeners() {
     Object.keys(calcInputs).forEach(function (key) {
       calcInputs[key].addEventListener("input", refreshCalculations);
@@ -959,9 +1331,15 @@
   }
 
   initMap();
+  renderApiSourcesGuide();
+  loadSavedFromStorage();
   bindCalcListeners();
   form.addEventListener("submit", handleFormSubmit);
   geolocationBtn.addEventListener("click", handleGeolocation);
   printReportBtn.addEventListener("click", handlePrintReport);
   copyReportBtn.addEventListener("click", handleCopyReport);
+  saveCalcBtn.addEventListener("click", handleSaveCalculation);
+  exportExcelBtn.addEventListener("click", exportCurrentToExcel);
+  exportCompareBtn.addEventListener("click", exportComparisonToExcel);
+  clearSavedBtn.addEventListener("click", handleClearSaved);
 })();

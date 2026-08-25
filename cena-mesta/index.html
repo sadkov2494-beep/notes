@@ -221,6 +221,15 @@
           </div>
         </div>
 
+        <div class="panel__actions panel__actions--calc">
+          <button class="btn btn--secondary" type="button" id="save-calc-btn" disabled>
+            Сохранить расчёт
+          </button>
+          <button class="btn btn--secondary" type="button" id="export-excel-btn" disabled>
+            Экспорт в Excel
+          </button>
+        </div>
+
         <div class="finance-summary" id="finance-summary">
           <article class="finance-card">
             <span class="finance-card__label">Выручка / мес</span>
@@ -257,6 +266,30 @@
         </div>
       </section>
 
+      <section class="panel" id="compare-section" hidden aria-label="Сравнение и сохранённые расчёты">
+        <div class="panel__header">
+          <h2 class="panel__title">Сравнение адресов</h2>
+          <div class="panel__actions">
+            <button class="btn btn--secondary" type="button" id="export-compare-btn" disabled>
+              Экспорт сравнения
+            </button>
+            <button class="btn btn--secondary" type="button" id="clear-saved-btn" disabled>
+              Очистить всё
+            </button>
+          </div>
+        </div>
+        <p class="panel__hint">
+          Сохраняйте расчёты по разным адресам и сравнивайте их в одной таблице. Данные хранятся в браузере.
+        </p>
+        <div class="saved-list" id="saved-list"></div>
+        <div class="compare-wrap" id="compare-wrap" hidden>
+          <table class="compare-table" id="compare-table">
+            <thead id="compare-thead"></thead>
+            <tbody id="compare-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="panel panel--report" id="report-section" hidden aria-label="Предварительный бизнес-план">
         <div class="panel__header">
           <h2 class="panel__title">Предварительный бизнес-план</h2>
@@ -268,6 +301,13 @@
         <div class="report" id="business-report">
           <p class="report__placeholder">Проведите анализ адреса — отчёт сформируется автоматически.</p>
         </div>
+      </section>
+
+      <section class="panel panel--sources" aria-label="Подключение реальных данных">
+        <details class="sources-details" id="sources-details">
+          <summary class="sources-details__summary">Почему трафик, аренда и кадастр — оценочные? Как подключить API</summary>
+          <div class="sources-content" id="sources-content"></div>
+        </details>
       </section>
     </main>
 
