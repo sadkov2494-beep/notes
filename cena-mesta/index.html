@@ -15,7 +15,7 @@
         <span class="header__logo" aria-hidden="true">📍</span>
         <div>
           <h1 class="header__title">Цена места</h1>
-          <p class="header__subtitle">Анализ коммерческой локации с учётом типа бизнеса</p>
+          <p class="header__subtitle">Анализ локации, финансовая модель и предварительный бизнес-план</p>
         </div>
       </div>
     </header>
@@ -54,12 +54,12 @@
               </select>
             </div>
             <div class="search__field">
-              <label class="search__label" for="search-radius">Радиус поиска</label>
+              <label class="search__label" for="search-radius">Радиус анализа</label>
               <select class="search__select" id="search-radius" name="radius">
-                <option value="300">300 м</option>
-                <option value="500" selected>500 м</option>
-                <option value="800">800 м</option>
                 <option value="1000">1 км</option>
+                <option value="3000" selected>3 км</option>
+                <option value="5000">5 км</option>
+                <option value="10000">10 км</option>
               </select>
             </div>
           </div>
@@ -173,8 +173,95 @@
         </div>
 
         <p class="results__disclaimer">
-          Конкуренты и инфраструктура — из OpenStreetMap. Аренда, трафик и кадастр — оценочные заглушки.
+          Конкуренты и инфраструктура — из OpenStreetMap. Аренда, трафик и кадастр — оценочные. См. блок внизу про подключение API.
         </p>
+      </section>
+
+      <section class="panel" id="calculator-section" hidden aria-label="Финансовый калькулятор">
+        <h2 class="panel__title">Финансовый калькулятор</h2>
+        <p class="panel__hint">Рассчитайте выручку, расходы, прибыль и срок окупаемости. Поля заполняются после анализа.</p>
+
+        <div class="calc-grid">
+          <div class="calc-group">
+            <h3 class="calc-group__title">Помещение и аренда</h3>
+            <label class="field"><span class="field__label">Площадь, м²</span><input class="field__input" type="number" id="calc-area" min="10" max="5000" value="80"></label>
+            <label class="field"><span class="field__label">Аренда, ₽/м² в месяц</span><input class="field__input" type="number" id="calc-rent-rate" min="100" max="50000" value="2500" step="50"></label>
+            <label class="field"><span class="field__label">Депозит (мес. аренды)</span><input class="field__input" type="number" id="calc-deposit-months" min="0" max="12" value="2"></label>
+          </div>
+          <div class="calc-group">
+            <h3 class="calc-group__title">Продажи</h3>
+            <label class="field"><span class="field__label">Средний чек, ₽</span><input class="field__input" type="number" id="calc-avg-check" min="50" max="100000" value="650" step="10"></label>
+            <label class="field"><span class="field__label">Конверсия трафика, %</span><input class="field__input" type="number" id="calc-conversion" min="0.1" max="50" value="2.5" step="0.1"></label>
+            <label class="field"><span class="field__label">Рабочих дней в месяц</span><input class="field__input" type="number" id="calc-work-days" min="1" max="31" value="26"></label>
+          </div>
+          <div class="calc-group">
+            <h3 class="calc-group__title">Персонал и расходы</h3>
+            <label class="field"><span class="field__label">Сотрудников</span><input class="field__input" type="number" id="calc-staff" min="0" max="200" value="4"></label>
+            <label class="field"><span class="field__label">ФОТ на сотрудника, ₽/мес</span><input class="field__input" type="number" id="calc-salary" min="0" max="500000" value="55000" step="1000"></label>
+            <label class="field"><span class="field__label">Коммунальные + прочее, ₽/мес</span><input class="field__input" type="number" id="calc-utilities" min="0" max="1000000" value="35000" step="1000"></label>
+            <label class="field"><span class="field__label">Маркетинг, ₽/мес</span><input class="field__input" type="number" id="calc-marketing" min="0" max="1000000" value="25000" step="1000"></label>
+            <label class="field"><span class="field__label">Себестоимость, % от выручки</span><input class="field__input" type="number" id="calc-cogs" min="0" max="90" value="35"></label>
+          </div>
+          <div class="calc-group">
+            <h3 class="calc-group__title">Стартовые вложения</h3>
+            <label class="field"><span class="field__label">Ремонт, ₽</span><input class="field__input" type="number" id="calc-renovation" min="0" max="50000000" value="800000" step="10000"></label>
+            <label class="field"><span class="field__label">Оборудование, ₽</span><input class="field__input" type="number" id="calc-equipment" min="0" max="50000000" value="1200000" step="10000"></label>
+            <label class="field"><span class="field__label">Лицензии, ₽</span><input class="field__input" type="number" id="calc-licenses" min="0" max="5000000" value="150000" step="5000"></label>
+            <label class="field"><span class="field__label">Прочие стартовые, ₽</span><input class="field__input" type="number" id="calc-other-startup" min="0" max="50000000" value="100000" step="5000"></label>
+          </div>
+        </div>
+
+        <div class="panel__actions panel__actions--calc">
+          <button class="btn btn--secondary" type="button" id="save-calc-btn" disabled>Сохранить расчёт</button>
+          <button class="btn btn--secondary" type="button" id="export-excel-btn" disabled>Экспорт в Excel</button>
+        </div>
+
+        <div class="finance-summary">
+          <article class="finance-card"><span class="finance-card__label">Выручка / мес</span><strong class="finance-card__value" id="fin-revenue">—</strong></article>
+          <article class="finance-card"><span class="finance-card__label">Расходы / мес</span><strong class="finance-card__value" id="fin-expenses">—</strong></article>
+          <article class="finance-card finance-card--highlight"><span class="finance-card__label">Прибыль / мес</span><strong class="finance-card__value" id="fin-profit">—</strong></article>
+          <article class="finance-card"><span class="finance-card__label">Маржинальность</span><strong class="finance-card__value" id="fin-margin">—</strong></article>
+          <article class="finance-card"><span class="finance-card__label">Точка безубыточности</span><strong class="finance-card__value" id="fin-breakeven">—</strong></article>
+          <article class="finance-card"><span class="finance-card__label">Общие вложения</span><strong class="finance-card__value" id="fin-investment">—</strong></article>
+          <article class="finance-card"><span class="finance-card__label">Срок окупаемости</span><strong class="finance-card__value" id="fin-payback">—</strong></article>
+          <article class="finance-card"><span class="finance-card__label">ROI за 1 год</span><strong class="finance-card__value" id="fin-roi">—</strong></article>
+        </div>
+      </section>
+
+      <section class="panel" id="compare-section" hidden aria-label="Сравнение адресов">
+        <div class="panel__header">
+          <h2 class="panel__title">Сравнение адресов</h2>
+          <div class="panel__actions">
+            <button class="btn btn--secondary" type="button" id="export-compare-btn" disabled>Экспорт сравнения</button>
+            <button class="btn btn--secondary" type="button" id="clear-saved-btn" disabled>Очистить всё</button>
+          </div>
+        </div>
+        <p class="panel__hint">Сохраняйте расчёты по разным адресам и сравнивайте в одной таблице.</p>
+        <div class="saved-list" id="saved-list"></div>
+        <div class="compare-wrap" id="compare-wrap" hidden>
+          <table class="compare-table" id="compare-table">
+            <thead id="compare-thead"></thead>
+            <tbody id="compare-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel panel--report" id="report-section" hidden aria-label="Бизнес-план">
+        <div class="panel__header">
+          <h2 class="panel__title">Предварительный бизнес-план</h2>
+          <div class="panel__actions">
+            <button class="btn btn--secondary" type="button" id="print-report-btn">Печать / PDF</button>
+            <button class="btn btn--secondary" type="button" id="copy-report-btn">Копировать текст</button>
+          </div>
+        </div>
+        <div class="report" id="business-report"><p class="report__placeholder">Проведите анализ — отчёт сформируется автоматически.</p></div>
+      </section>
+
+      <section class="panel panel--sources" aria-label="Подключение API">
+        <details class="sources-details">
+          <summary class="sources-details__summary">Почему трафик, аренда и кадастр — оценочные? Как подключить API</summary>
+          <div class="sources-content" id="sources-content"></div>
+        </details>
       </section>
     </main>
 

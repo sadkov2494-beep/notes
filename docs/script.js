@@ -14,6 +14,23 @@
   var OVERPASS_URL = "https://overpass-api.de/api/interpreter";
   var NOMINATIM_MIN_INTERVAL_MS = 1100;
   var lastGeocodeRequestAt = 0;
+  var STORAGE_KEY = "cena-mesta-saved-v2";
+  var MAX_SAVED = 10;
+
+  var FINANCE_PRESETS = {
+    hairdresser: { avgCheck: 1200, conversion: 1.2, cogs: 25, staff: 3, salary: 50000, renovation: 500000, equipment: 400000 },
+    cafe: { avgCheck: 450, conversion: 3.0, cogs: 38, staff: 4, salary: 52000, renovation: 700000, equipment: 900000 },
+    restaurant: { avgCheck: 1500, conversion: 1.5, cogs: 42, staff: 8, salary: 55000, renovation: 1500000, equipment: 2000000 },
+    pharmacy: { avgCheck: 850, conversion: 1.2, cogs: 62, staff: 3, salary: 52000, renovation: 500000, equipment: 1100000 },
+    grocery: { avgCheck: 600, conversion: 2.0, cogs: 55, staff: 3, salary: 48000, renovation: 600000, equipment: 800000 },
+    fitness: { avgCheck: 3500, conversion: 0.4, cogs: 15, staff: 6, salary: 58000, renovation: 2500000, equipment: 3500000 },
+    dentist: { avgCheck: 4500, conversion: 0.5, cogs: 20, staff: 4, salary: 65000, renovation: 1200000, equipment: 2500000 },
+    bank: { avgCheck: 0, conversion: 0.5, cogs: 10, staff: 5, salary: 60000, renovation: 1000000, equipment: 500000 },
+    clothes: { avgCheck: 3500, conversion: 0.8, cogs: 50, staff: 3, salary: 48000, renovation: 600000, equipment: 500000 },
+    auto: { avgCheck: 5000, conversion: 0.3, cogs: 45, staff: 4, salary: 55000, renovation: 800000, equipment: 1500000 },
+    flowers: { avgCheck: 2000, conversion: 1.5, cogs: 40, staff: 2, salary: 45000, renovation: 300000, equipment: 200000 },
+    kids: { avgCheck: 2500, conversion: 0.6, cogs: 20, staff: 5, salary: 50000, renovation: 900000, equipment: 600000 }
+  };
 
   // Типы бизнеса и теги OpenStreetMap для поиска конкурентов
   var BUSINESS_TYPES = {
@@ -169,6 +186,55 @@
 
   var descCompetitors = document.getElementById("desc-competitors");
 
+  var calculatorSection = document.getElementById("calculator-section");
+  var reportSection = document.getElementById("report-section");
+  var compareSection = document.getElementById("compare-section");
+  var businessReport = document.getElementById("business-report");
+  var savedList = document.getElementById("saved-list");
+  var compareWrap = document.getElementById("compare-wrap");
+  var compareThead = document.getElementById("compare-thead");
+  var compareTbody = document.getElementById("compare-tbody");
+  var sourcesContent = document.getElementById("sources-content");
+  var saveCalcBtn = document.getElementById("save-calc-btn");
+  var exportExcelBtn = document.getElementById("export-excel-btn");
+  var exportCompareBtn = document.getElementById("export-compare-btn");
+  var clearSavedBtn = document.getElementById("clear-saved-btn");
+  var printReportBtn = document.getElementById("print-report-btn");
+  var copyReportBtn = document.getElementById("copy-report-btn");
+
+  var calcInputs = {
+    area: document.getElementById("calc-area"),
+    rentRate: document.getElementById("calc-rent-rate"),
+    depositMonths: document.getElementById("calc-deposit-months"),
+    avgCheck: document.getElementById("calc-avg-check"),
+    conversion: document.getElementById("calc-conversion"),
+    workDays: document.getElementById("calc-work-days"),
+    staff: document.getElementById("calc-staff"),
+    salary: document.getElementById("calc-salary"),
+    utilities: document.getElementById("calc-utilities"),
+    marketing: document.getElementById("calc-marketing"),
+    cogs: document.getElementById("calc-cogs"),
+    renovation: document.getElementById("calc-renovation"),
+    equipment: document.getElementById("calc-equipment"),
+    licenses: document.getElementById("calc-licenses"),
+    otherStartup: document.getElementById("calc-other-startup")
+  };
+
+  var finOutputs = {
+    revenue: document.getElementById("fin-revenue"),
+    expenses: document.getElementById("fin-expenses"),
+    profit: document.getElementById("fin-profit"),
+    margin: document.getElementById("fin-margin"),
+    breakeven: document.getElementById("fin-breakeven"),
+    investment: document.getElementById("fin-investment"),
+    payback: document.getElementById("fin-payback"),
+    roi: document.getElementById("fin-roi")
+  };
+
+  var currentAnalysis = null;
+  var savedAnalyses = [];
+  var lastAddress = "";
+
   // ===== Состояние карты (OpenLayers) =====
   var map = null;
   var popupOverlay = null;
@@ -259,6 +325,369 @@
 
   function formatNumber(num) {
     return new Intl.NumberFormat("ru-RU").format(Math.round(num));
+  }
+
+  function formatMoney(num) {
+    return formatNumber(num) + " ₽";
+  }
+
+  function formatRadiusLabel(meters) {
+    return meters >= 1000 ? meters / 1000 + " км" : meters + " м";
+  }
+
+  function escapeHtml(text) {
+    var div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function readCalcInput(el) {
+    return parseFloat(el.value) || 0;
+  }
+
+  function readAllCalcValues() {
+    var values = {};
+    Object.keys(calcInputs).forEach(function (key) {
+      values[key] = readCalcInput(calcInputs[key]);
+    });
+    return values;
+  }
+
+  function writeCalcValues(values) {
+    Object.keys(values).forEach(function (key) {
+      if (calcInputs[key]) calcInputs[key].value = values[key];
+    });
+  }
+
+  function applyFinancePreset(businessKey, metrics) {
+    var preset = FINANCE_PRESETS[businessKey] || FINANCE_PRESETS.cafe;
+    calcInputs.area.value = metrics.area;
+    calcInputs.rentRate.value = metrics.rent;
+    calcInputs.avgCheck.value = preset.avgCheck;
+    calcInputs.conversion.value = preset.conversion;
+    calcInputs.staff.value = preset.staff;
+    calcInputs.salary.value = preset.salary;
+    calcInputs.cogs.value = preset.cogs;
+    calcInputs.renovation.value = preset.renovation;
+    calcInputs.equipment.value = preset.equipment;
+  }
+
+  function calculateFinances(traffic) {
+    var area = readCalcInput(calcInputs.area);
+    var rentRate = readCalcInput(calcInputs.rentRate);
+    var depositMonths = readCalcInput(calcInputs.depositMonths);
+    var avgCheck = readCalcInput(calcInputs.avgCheck);
+    var conversion = readCalcInput(calcInputs.conversion) / 100;
+    var workDays = readCalcInput(calcInputs.workDays);
+    var staff = readCalcInput(calcInputs.staff);
+    var salary = readCalcInput(calcInputs.salary);
+    var utilities = readCalcInput(calcInputs.utilities);
+    var marketing = readCalcInput(calcInputs.marketing);
+    var cogsPercent = readCalcInput(calcInputs.cogs) / 100;
+    var renovation = readCalcInput(calcInputs.renovation);
+    var equipment = readCalcInput(calcInputs.equipment);
+    var licenses = readCalcInput(calcInputs.licenses);
+    var otherStartup = readCalcInput(calcInputs.otherStartup);
+
+    var dailyCustomers = traffic * conversion;
+    var monthlyRevenue = dailyCustomers * workDays * avgCheck;
+    var monthlyRent = area * rentRate;
+    var monthlyPayroll = staff * salary;
+    var monthlyCogs = monthlyRevenue * cogsPercent;
+    var monthlyOpex = monthlyRent + monthlyPayroll + utilities + marketing + monthlyCogs;
+    var monthlyProfit = monthlyRevenue - monthlyOpex;
+    var margin = monthlyRevenue > 0 ? (monthlyProfit / monthlyRevenue) * 100 : 0;
+    var deposit = monthlyRent * depositMonths;
+    var totalInvestment = renovation + equipment + licenses + otherStartup + deposit;
+    var fixedCosts = monthlyRent + monthlyPayroll + utilities + marketing;
+    var contributionMargin = avgCheck * (1 - cogsPercent);
+    var breakevenTraffic = conversion > 0 && contributionMargin > 0
+      ? fixedCosts / (contributionMargin * workDays) / conversion : 0;
+    var paybackMonths = monthlyProfit > 0 ? totalInvestment / monthlyProfit : null;
+    var annualProfit = monthlyProfit * 12;
+    var roi = totalInvestment > 0 ? (annualProfit / totalInvestment) * 100 : 0;
+
+    return {
+      dailyCustomers: dailyCustomers,
+      monthlyRevenue: monthlyRevenue,
+      monthlyRent: monthlyRent,
+      monthlyPayroll: monthlyPayroll,
+      monthlyCogs: monthlyCogs,
+      monthlyOpex: monthlyOpex,
+      monthlyProfit: monthlyProfit,
+      margin: margin,
+      totalInvestment: totalInvestment,
+      deposit: deposit,
+      breakevenTraffic: breakevenTraffic,
+      paybackMonths: paybackMonths,
+      roi: roi,
+      annualProfit: annualProfit
+    };
+  }
+
+  function updateFinanceDisplay(finances) {
+    finOutputs.revenue.textContent = formatMoney(finances.monthlyRevenue);
+    finOutputs.expenses.textContent = formatMoney(finances.monthlyOpex);
+    finOutputs.profit.textContent = formatMoney(finances.monthlyProfit);
+    finOutputs.profit.className = "finance-card__value" + (finances.monthlyProfit >= 0 ? " finance-card__value--positive" : " finance-card__value--negative");
+    finOutputs.margin.textContent = finances.margin.toFixed(1) + "%";
+    finOutputs.breakeven.textContent = formatNumber(finances.breakevenTraffic) + " чел./день";
+    finOutputs.investment.textContent = formatMoney(finances.totalInvestment);
+    finOutputs.payback.textContent = finances.paybackMonths === null ? "Не окупится" :
+      finances.paybackMonths > 120 ? "> 10 лет" : finances.paybackMonths.toFixed(1) + " мес.";
+    finOutputs.roi.textContent = finances.roi.toFixed(1) + "%";
+    finOutputs.roi.className = "finance-card__value" + (finances.roi >= 0 ? " finance-card__value--positive" : " finance-card__value--negative");
+  }
+
+  function generateBusinessReport(data, finances) {
+    var m = data.metrics;
+    var radiusLabel = formatRadiusLabel(data.radius);
+    var profitVerdict = finances.monthlyProfit > 0
+      ? "Проект выходит в плюс на " + formatMoney(finances.monthlyProfit) + " в месяц."
+      : "Проект убыточен на " + formatMoney(Math.abs(finances.monthlyProfit)) + " в месяц.";
+
+    return (
+      "<h3>1. Резюме</h3><p><strong>Адрес:</strong> " + escapeHtml(lastAddress) + "</p>" +
+      "<p><strong>Формат:</strong> " + escapeHtml(data.business.label) + "</p>" +
+      "<p><strong>Зона анализа:</strong> " + radiusLabel + "</p>" +
+      "<p><strong>Оценка:</strong> " + data.score + "/100</p><p>" + escapeHtml(data.recommendation) + "</p>" +
+      "<h3>2. Локация</h3><ul>" +
+      "<li>Конкуренты: " + data.competitors.length + " (" + data.competition.level + ")</li>" +
+      "<li>Трафик: " + formatNumber(m.traffic) + " чел./сут (" + m.trafficLevel + ")</li>" +
+      "<li>Аренда: " + formatMoney(m.rent) + "/м² · Площадь: " + m.area + " м²</li>" +
+      "<li>Остановки: " + data.transit.length + " · Парковки: " + data.parking.length + "</li>" +
+      "</ul>" +
+      "<h3>3. Финансы (месяц)</h3><ul>" +
+      "<li>Выручка: " + formatMoney(finances.monthlyRevenue) + "</li>" +
+      "<li>Расходы: " + formatMoney(finances.monthlyOpex) + "</li>" +
+      "<li><strong>Прибыль: " + formatMoney(finances.monthlyProfit) + "</strong> (маржа " + finances.margin.toFixed(1) + "%)</li>" +
+      "</ul>" +
+      "<h3>4. Вложения</h3><p><strong>Итого:</strong> " + formatMoney(finances.totalInvestment) + "</p>" +
+      "<h3>5. Показатели</h3><ul>" +
+      "<li>Безубыточность: " + formatNumber(finances.breakevenTraffic) + " чел./день</li>" +
+      "<li>ROI за год: " + finances.roi.toFixed(1) + "%</li></ul>" +
+      "<p class=\"report__verdict\"><strong>Вывод:</strong> " + profitVerdict + "</p>" +
+      "<p class=\"report__meta\">Сформировано " + new Date().toLocaleString("ru-RU") + ". Не является инвестиционной рекомендацией.</p>"
+    );
+  }
+
+  function refreshCalculations() {
+    if (!currentAnalysis) return;
+    var finances = calculateFinances(currentAnalysis.metrics.traffic);
+    currentAnalysis.finances = finances;
+    updateFinanceDisplay(finances);
+    businessReport.innerHTML = generateBusinessReport(currentAnalysis, finances);
+  }
+
+  function enableAnalysisActions(enabled) {
+    saveCalcBtn.disabled = !enabled;
+    exportExcelBtn.disabled = !enabled;
+  }
+
+  function afterAnalysisComplete(data, address) {
+    lastAddress = address;
+    currentAnalysis = data;
+    calculatorSection.hidden = false;
+    reportSection.hidden = false;
+    applyFinancePreset(getBusinessKey(), data.metrics);
+    refreshCalculations();
+    enableAnalysisActions(true);
+  }
+
+  function csvEscape(value) {
+    var str = value == null ? "" : String(value);
+    if (str.indexOf(";") !== -1 || str.indexOf("\"") !== -1) return "\"" + str.replace(/"/g, "\"\"") + "\"";
+    return str;
+  }
+
+  function downloadCsv(filename, rows) {
+    var blob = new Blob(["\uFEFF" + rows.map(function (r) { return r.map(csvEscape).join(";"); }).join("\n")], { type: "text/csv;charset=utf-8;" });
+    var link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function exportCurrentToExcel() {
+    if (!currentAnalysis) return;
+    var f = currentAnalysis.finances;
+    var m = currentAnalysis.metrics;
+    downloadCsv("cena-mesta-" + Date.now() + ".csv", [
+      ["Параметр", "Значение"],
+      ["Адрес", lastAddress],
+      ["Тип бизнеса", currentAnalysis.business.label],
+      ["Радиус", formatRadiusLabel(currentAnalysis.radius)],
+      ["Оценка", currentAnalysis.score + "/100"],
+      ["Конкуренты", currentAnalysis.competitors.length],
+      ["Трафик", Math.round(m.traffic)],
+      ["Аренда ₽/м²", Math.round(m.rent)],
+      ["Выручка / мес", Math.round(f.monthlyRevenue)],
+      ["Прибыль / мес", Math.round(f.monthlyProfit)],
+      ["Вложения", Math.round(f.totalInvestment)],
+      ["ROI %", f.roi.toFixed(1)]
+    ]);
+  }
+
+  function getCompareRows() {
+    return [
+      { key: "score", label: "Оценка", format: function (v) { return v + "/100"; }, higherBetter: true },
+      { key: "competitors", label: "Конкуренты", format: function (v) { return v + " шт."; }, higherBetter: false },
+      { key: "traffic", label: "Трафик", format: function (v) { return formatNumber(v); }, higherBetter: true },
+      { key: "rent", label: "Аренда ₽/м²", format: function (v) { return formatMoney(v); }, higherBetter: false },
+      { key: "revenue", label: "Выручка / мес", format: function (v) { return formatMoney(v); }, higherBetter: true },
+      { key: "profit", label: "Прибыль / мес", format: function (v) { return formatMoney(v); }, higherBetter: true },
+      { key: "investment", label: "Вложения", format: function (v) { return formatMoney(v); }, higherBetter: false },
+      { key: "roi", label: "ROI %", format: function (v) { return v.toFixed(1) + "%"; }, higherBetter: true }
+    ];
+  }
+
+  function getCompareValue(item, key) {
+    if (key === "score") return item.score;
+    if (key === "competitors") return item.competitors;
+    if (key === "traffic") return item.metrics.traffic;
+    if (key === "rent") return item.metrics.rent;
+    if (key === "revenue") return item.finances.monthlyRevenue;
+    if (key === "profit") return item.finances.monthlyProfit;
+    if (key === "investment") return item.finances.totalInvestment;
+    if (key === "roi") return item.finances.roi;
+    return null;
+  }
+
+  function renderSavedList() {
+    var hasItems = savedAnalyses.length > 0;
+    compareSection.hidden = !hasItems && !currentAnalysis;
+    exportCompareBtn.disabled = !hasItems;
+    clearSavedBtn.disabled = !hasItems;
+    if (!hasItems) {
+      savedList.innerHTML = '<p class="saved-list__empty">Нет сохранённых расчётов.</p>';
+      compareWrap.hidden = true;
+      return;
+    }
+    savedList.innerHTML = savedAnalyses.map(function (item) {
+      return '<article class="saved-item"><div class="saved-item__info"><p class="saved-item__title">' +
+        escapeHtml(item.address) + '</p><p class="saved-item__meta">' + escapeHtml(item.businessLabel) +
+        ' · ' + formatRadiusLabel(item.radius) + ' · ' + item.score + '/100</p></div>' +
+        '<div class="saved-item__actions">' +
+        '<button class="btn btn--secondary btn--small" data-action="load" data-id="' + item.id + '">Открыть</button>' +
+        '<button class="btn btn--danger btn--small" data-action="delete" data-id="' + item.id + '">Удалить</button>' +
+        '</div></article>';
+    }).join("");
+    savedList.querySelectorAll("button").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-id");
+        if (btn.getAttribute("data-action") === "load") handleLoadSaved(id);
+        else handleDeleteSaved(id);
+      });
+    });
+    renderComparisonTable();
+  }
+
+  function renderComparisonTable() {
+    if (!savedAnalyses.length) { compareWrap.hidden = true; return; }
+    compareWrap.hidden = false;
+    compareThead.innerHTML = '<tr><th>Показатель</th>' + savedAnalyses.map(function (item, i) {
+      return '<th>#' + (i + 1) + '<br><small>' + escapeHtml(item.address.split(",")[0]) + '</small></th>';
+    }).join("") + '</tr>';
+    compareTbody.innerHTML = getCompareRows().map(function (row) {
+      var values = savedAnalyses.map(function (item) { return getCompareValue(item, row.key); });
+      var numeric = values.filter(function (v) { return typeof v === "number"; });
+      var best = numeric.length ? (row.higherBetter ? Math.max.apply(null, numeric) : Math.min.apply(null, numeric)) : null;
+      return '<tr><th class="compare-table__metric">' + row.label + '</th>' + values.map(function (val) {
+        var isBest = typeof val === "number" && best !== null && val === best && savedAnalyses.length > 1;
+        return '<td' + (isBest ? ' class="compare-table__best"' : '') + '>' + row.format(val) + '</td>';
+      }).join("") + '</tr>';
+    }).join("");
+  }
+
+  function buildSnapshot() {
+    if (!currentAnalysis) return null;
+    return {
+      id: Date.now().toString(36),
+      savedAt: new Date().toISOString(),
+      address: lastAddress,
+      businessKey: getBusinessKey(),
+      businessLabel: currentAnalysis.business.label,
+      radius: currentAnalysis.radius,
+      score: currentAnalysis.score,
+      competitors: currentAnalysis.competitors.length,
+      metrics: currentAnalysis.metrics,
+      finances: currentAnalysis.finances,
+      calc: readAllCalcValues()
+    };
+  }
+
+  function handleSaveCalculation() {
+    if (!currentAnalysis) return;
+    var snapshot = buildSnapshot();
+    var idx = savedAnalyses.findIndex(function (s) {
+      return s.address === snapshot.address && s.businessKey === snapshot.businessKey && s.radius === snapshot.radius;
+    });
+    if (idx >= 0) savedAnalyses[idx] = snapshot; else {
+      savedAnalyses.unshift(snapshot);
+      if (savedAnalyses.length > MAX_SAVED) savedAnalyses = savedAnalyses.slice(0, MAX_SAVED);
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(savedAnalyses));
+    renderSavedList();
+    compareSection.hidden = false;
+    saveCalcBtn.textContent = "Сохранено!";
+    setTimeout(function () { saveCalcBtn.textContent = "Сохранить расчёт"; }, 1500);
+  }
+
+  function handleLoadSaved(id) {
+    var item = savedAnalyses.find(function (s) { return s.id === id; });
+    if (!item) return;
+    addressInput.value = item.address;
+    businessTypeSelect.value = item.businessKey;
+    radiusSelect.value = String(item.radius);
+    writeCalcValues(item.calc);
+    lastAddress = item.address;
+    analyzeLocation(item.address);
+  }
+
+  function handleDeleteSaved(id) {
+    savedAnalyses = savedAnalyses.filter(function (s) { return s.id !== id; });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(savedAnalyses));
+    renderSavedList();
+  }
+
+  function handleClearSaved() {
+    if (!savedAnalyses.length || !window.confirm("Удалить все сохранённые расчёты?")) return;
+    savedAnalyses = [];
+    localStorage.removeItem(STORAGE_KEY);
+    renderSavedList();
+    compareSection.hidden = !currentAnalysis;
+  }
+
+  function exportComparisonToExcel() {
+    if (!savedAnalyses.length) return;
+    var rows = [["Показатель"].concat(savedAnalyses.map(function (item, i) { return "#" + (i + 1) + " " + item.address; }))];
+    getCompareRows().forEach(function (row) {
+      rows.push([row.label].concat(savedAnalyses.map(function (item) { return row.format(getCompareValue(item, row.key)); })));
+    });
+    downloadCsv("cena-mesta-sravnenie-" + Date.now() + ".csv", rows);
+  }
+
+  function loadSavedFromStorage() {
+    try {
+      savedAnalyses = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      if (!Array.isArray(savedAnalyses)) savedAnalyses = [];
+    } catch (e) { savedAnalyses = []; }
+    renderSavedList();
+  }
+
+  function renderApiSourcesGuide() {
+    sourcesContent.innerHTML =
+      '<p class="sources-note">Сайт на GitHub Pages работает без сервера. Конкуренты — реальные (OSM). ' +
+      'Трафик, аренда и кадастр — оценки, потому что эти данные в РФ платные и требуют бэкенд с API-ключами.</p>' +
+      '<h3>Стоимость подключения</h3><table class="sources-table"><thead><tr><th>Данные</th><th>Провайдер</th><th>Цена</th></tr></thead><tbody>' +
+      '<tr><td>Кадастр</td><td><a href="https://dadata.ru/api/cadastre-clean/" target="_blank" rel="noopener">DaData</a></td><td>~0,20 ₽/запрос</td></tr>' +
+      '<tr><td>Адрес</td><td>DaData</td><td>бесплатно до 10k/день</td></tr>' +
+      '<tr><td>Трафик</td><td><a href="https://yandex.ru/geoanalytics/" target="_blank" rel="noopener">Яндекс Геоаналитика</a></td><td>0 ₽ в вебе, API — B2B</td></tr>' +
+      '<tr><td>Аренда</td><td>ЦИАН / агентства</td><td>от ~30 000 ₽/мес</td></tr>' +
+      '<tr><td>Конкуренты</td><td>OSM</td><td>0 ₽ (уже работает)</td></tr>' +
+      '</tbody></table>' +
+      '<p><strong>MVP:</strong> 0–3 000 ₽/мес · <strong>Базовый:</strong> 5 000–15 000 ₽/мес · <strong>Полный:</strong> 50 000+ ₽/мес</p>';
   }
 
   function pseudoRandom(lat, lon, seed) {
@@ -608,19 +1037,20 @@
     var count = competitors.length;
     var comp = getCompetitionLevel(count, business);
     var nearest = count ? competitors[0].distance + " м" : "нет рядом";
+    var radiusLabel = formatRadiusLabel(radius);
 
     if (score >= 75) {
       return "Отличная локация для «" + business.label + "». Конкуренция " +
-        comp.level.toLowerCase() + " (" + count + " " + business.plural + " в " + radius + " м). " +
+        comp.level.toLowerCase() + " (" + count + " " + business.plural + " в " + radiusLabel + "). " +
         "Ближайший конкурент — " + nearest + ".";
     }
     if (score >= 55) {
-      return "Локация подходит с оговорками. В радиусе " + radius + " м найдено " +
+      return "Локация подходит с оговорками. В радиусе " + radiusLabel + " найдено " +
         count + " " + business.plural + " (" + comp.level.toLowerCase() + " конкуренция). " +
         "Изучите ценовую политику соседей и проходимость улицы.";
     }
-    return "Высокая конкуренция: " + count + " " + business.plural + " в " + radius +
-      " м. Ближайший — " + nearest + ". Рассмотрите другой адрес или уникальное позиционирование.";
+    return "Высокая конкуренция: " + count + " " + business.plural + " в " + radiusLabel +
+      ". Ближайший — " + nearest + ". Рассмотрите другой адрес или уникальное позиционирование.";
   }
 
   function calculateStubMetrics(lat, lon, business) {
@@ -646,7 +1076,7 @@
   function showLoading(business, radius) {
     resultsHint.hidden = true;
     resultsBusiness.hidden = false;
-    resultsBusiness.textContent = business.icon + " " + business.label + " · радиус " + radius + " м";
+    resultsBusiness.textContent = business.icon + " " + business.label + " · радиус " + formatRadiusLabel(radius);
     resultsGrid.hidden = false;
     summaryBlock.hidden = false;
     competitorsList.hidden = false;
@@ -672,7 +1102,7 @@
     summaryText.textContent = data.recommendation;
 
     valueEls.competitors.textContent = data.competitors.length;
-    descCompetitors.textContent = business.plural + " в радиусе " + data.radius + " м";
+    descCompetitors.textContent = business.plural + " в радиусе " + formatRadiusLabel(data.radius);
 
     valueEls.nearest.textContent = data.competitors.length
       ? data.competitors[0].distance + " м (" + data.competitors[0].name + ")"
@@ -702,8 +1132,8 @@
       }).join("");
     } else {
       competitorsItems.innerHTML =
-        "<li class='competitors-list__empty'>В радиусе " + data.radius +
-        " м конкурентов не найдено в OpenStreetMap. Это может быть хорошим знаком!</li>";
+        "<li class='competitors-list__empty'>В радиусе " + formatRadiusLabel(data.radius) +
+        " конкурентов не найдено в OpenStreetMap. Это может быть хорошим знаком!</li>";
     }
   }
 
@@ -758,6 +1188,7 @@
       };
     }).then(function (data) {
       renderResults(data);
+      afterAnalysisComplete(data, displayName);
       setLoading(false);
     }).catch(function (error) {
       setLoading(false);
@@ -775,7 +1206,7 @@
     setLoading(true);
 
     var businessKey = getBusinessKey();
-    var radius = parseInt(radiusSelect.value, 10) || 500;
+    var radius = parseInt(radiusSelect.value, 10) || 3000;
 
     geocodeAddress(address)
       .then(function (place) {
@@ -817,7 +1248,7 @@
 
     setLoading(true);
     var businessKey = getBusinessKey();
-    var radius = parseInt(radiusSelect.value, 10) || 500;
+    var radius = parseInt(radiusSelect.value, 10) || 3000;
 
     navigator.geolocation.getCurrentPosition(
       function (position) {
@@ -842,6 +1273,23 @@
 
   // ===== Инициализация =====
   initMap();
+  renderApiSourcesGuide();
+  loadSavedFromStorage();
+  Object.keys(calcInputs).forEach(function (key) {
+    calcInputs[key].addEventListener("input", refreshCalculations);
+  });
   form.addEventListener("submit", handleFormSubmit);
   geolocationBtn.addEventListener("click", handleGeolocation);
+  saveCalcBtn.addEventListener("click", handleSaveCalculation);
+  exportExcelBtn.addEventListener("click", exportCurrentToExcel);
+  exportCompareBtn.addEventListener("click", exportComparisonToExcel);
+  clearSavedBtn.addEventListener("click", handleClearSaved);
+  printReportBtn.addEventListener("click", function () { window.print(); });
+  copyReportBtn.addEventListener("click", function () {
+    if (!currentAnalysis) return;
+    navigator.clipboard.writeText(businessReport.innerText).then(function () {
+      copyReportBtn.textContent = "Скопировано!";
+      setTimeout(function () { copyReportBtn.textContent = "Копировать текст"; }, 2000);
+    });
+  });
 })();
