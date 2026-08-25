@@ -1,6 +1,6 @@
 /**
  * «Цена места» — анализ коммерческой локации с учётом типа бизнеса.
- * Геокодер: Nominatim · POI: Overpass API · Карта: Leaflet
+ * Геокодер: Nominatim · POI: Overpass API · Карта: OpenLayers (OSGeo)
  */
 
 (function () {
@@ -152,6 +152,7 @@
   var competitorsList = document.getElementById("competitors-list");
   var competitorsItems = document.getElementById("competitors-items");
   var mapLegend = document.getElementById("map-legend");
+  var mapPopup = document.getElementById("map-popup");
 
   var valueEls = {
     competitors: document.getElementById("value-competitors"),
@@ -168,43 +169,68 @@
 
   var descCompetitors = document.getElementById("desc-competitors");
 
-  // ===== Состояние карты =====
+  // ===== Состояние карты (OpenLayers) =====
   var map = null;
-  var targetMarker = null;
-  var radiusCircle = null;
-  var competitorLayer = null;
-  var transitLayer = null;
+  var popupOverlay = null;
+  var targetSource = null;
+  var circleSource = null;
+  var competitorSource = null;
+  var transitSource = null;
 
   /**
-   * Заполнить выпадающий список типов бизнеса.
+   * Получить выбранный тип бизнеса с проверкой.
    */
-  function initBusinessTypes() {
-    Object.keys(BUSINESS_TYPES).forEach(function (key) {
-      var type = BUSINESS_TYPES[key];
-      var option = document.createElement("option");
-      option.value = key;
-      option.textContent = type.icon + " " + type.label;
-      businessTypeSelect.appendChild(option);
-    });
+  function getBusinessKey() {
+    var key = businessTypeSelect.value;
+    if (!key || !BUSINESS_TYPES[key]) {
+      return "hairdresser";
+    }
+    return key;
   }
 
   /**
-   * Инициализация карты Leaflet.
+   * Инициализация карты OpenLayers.
    */
   function initMap() {
-    map = L.map("map", {
-      center: MOSCOW_CENTER,
-      zoom: DEFAULT_ZOOM,
-      scrollWheelZoom: true
+    targetSource = new ol.source.Vector();
+    circleSource = new ol.source.Vector();
+    competitorSource = new ol.source.Vector();
+    transitSource = new ol.source.Vector();
+
+    map = new ol.Map({
+      target: "map",
+      layers: [
+        new ol.layer.Tile({ source: new ol.source.OSM() }),
+        new ol.layer.Vector({ source: circleSource, zIndex: 1 }),
+        new ol.layer.Vector({ source: transitSource, zIndex: 2 }),
+        new ol.layer.Vector({ source: competitorSource, zIndex: 3 }),
+        new ol.layer.Vector({ source: targetSource, zIndex: 4 })
+      ],
+      view: new ol.View({
+        center: ol.proj.fromLonLat([MOSCOW_CENTER[1], MOSCOW_CENTER[0]]),
+        zoom: DEFAULT_ZOOM
+      })
     });
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19
-    }).addTo(map);
+    popupOverlay = new ol.Overlay({
+      element: mapPopup,
+      autoPan: true,
+      positioning: "bottom-center",
+      offset: [0, -12]
+    });
+    map.addOverlay(popupOverlay);
 
-    competitorLayer = L.layerGroup().addTo(map);
-    transitLayer = L.layerGroup().addTo(map);
+    map.on("click", function (evt) {
+      var feature = map.forEachFeatureAtPixel(evt.pixel, function (f) { return f; });
+      if (feature && feature.get("title")) {
+        mapPopup.innerHTML = feature.get("title");
+        mapPopup.hidden = false;
+        popupOverlay.setPosition(evt.coordinate);
+      } else {
+        mapPopup.hidden = true;
+        popupOverlay.setPosition(undefined);
+      }
+    });
   }
 
   function showError(text) {
@@ -470,63 +496,84 @@
     });
   }
 
-  // ===== Карта: метки и круг радиуса =====
+  // ===== Карта: метки и круг радиуса (OpenLayers) =====
 
-  function createIcon(color, label) {
-    return L.divIcon({
-      className: "map-pin map-pin--" + color,
-      html: '<span>' + label + "</span>",
-      iconSize: [28, 28],
-      iconAnchor: [14, 14]
+  function makePointStyle(fillColor, label) {
+    return new ol.style.Style({
+      image: new ol.style.Circle({
+        radius: 13,
+        fill: new ol.style.Fill({ color: fillColor }),
+        stroke: new ol.style.Stroke({ color: "#ffffff", width: 2 })
+      }),
+      text: new ol.style.Text({
+        text: label,
+        font: "bold 11px sans-serif",
+        fill: new ol.style.Fill({ color: "#ffffff" })
+      })
     });
   }
 
+  function addPointFeature(source, lat, lon, style, title) {
+    var feature = new ol.Feature({
+      geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])),
+      title: title
+    });
+    feature.setStyle(style);
+    source.addFeature(feature);
+    return feature;
+  }
+
   function clearMapLayers() {
-    competitorLayer.clearLayers();
-    transitLayer.clearLayers();
-    if (radiusCircle) {
-      map.removeLayer(radiusCircle);
-      radiusCircle = null;
-    }
+    targetSource.clear();
+    circleSource.clear();
+    competitorSource.clear();
+    transitSource.clear();
+    mapPopup.hidden = true;
+    if (popupOverlay) popupOverlay.setPosition(undefined);
   }
 
   function showOnMap(lat, lon, label, radius, competitors, transit) {
     clearMapLayers();
 
-    if (targetMarker) {
-      targetMarker.setLatLng([lat, lon]);
-      targetMarker.setPopupContent("<strong>Ваша точка</strong><br>" + label);
-    } else {
-      targetMarker = L.marker([lat, lon], { icon: createIcon("target", "★") })
-        .addTo(map)
-        .bindPopup("<strong>Ваша точка</strong><br>" + label)
-        .openPopup();
-    }
+    addPointFeature(
+      targetSource, lat, lon,
+      makePointStyle("#3b82f6", "★"),
+      "<strong>Ваша точка</strong><br>" + label
+    );
 
-    radiusCircle = L.circle([lat, lon], {
-      radius: radius,
-      color: "#3b82f6",
-      fillColor: "#3b82f6",
-      fillOpacity: 0.08,
-      weight: 2,
-      dashArray: "6 4"
-    }).addTo(map);
+    var circlePolygon = ol.geom.Polygon.fromCircle(
+      new ol.geom.Circle(ol.proj.fromLonLat([lon, lat]), radius),
+      64
+    );
+    var circleFeature = new ol.Feature({ geometry: circlePolygon });
+    circleFeature.setStyle(new ol.style.Style({
+      stroke: new ol.style.Stroke({ color: "#3b82f6", width: 2, lineDash: [6, 4] }),
+      fill: new ol.style.Fill({ color: "rgba(59, 130, 246, 0.1)" })
+    }));
+    circleSource.addFeature(circleFeature);
 
     competitors.forEach(function (c, i) {
-      L.marker([c.lat, c.lon], { icon: createIcon("competitor", String(i + 1)) })
-        .addTo(competitorLayer)
-        .bindPopup("<strong>" + c.name + "</strong><br>" + c.distance + " м от вас");
+      addPointFeature(
+        competitorSource, c.lat, c.lon,
+        makePointStyle("#ef4444", String(i + 1)),
+        "<strong>" + c.name + "</strong><br>" + c.distance + " м от вас"
+      );
     });
 
     transit.slice(0, 15).forEach(function (t) {
-      L.marker([t.lat, t.lon], { icon: createIcon("transit", "🚌") })
-        .addTo(transitLayer)
-        .bindPopup(t.name);
+      addPointFeature(
+        transitSource, t.lat, t.lon,
+        makePointStyle("#22c55e", "•"),
+        t.name
+      );
     });
 
-    var bounds = L.latLngBounds([[lat, lon]]);
-    competitors.forEach(function (c) { bounds.extend([c.lat, c.lon]); });
-    map.fitBounds(bounds.pad(0.15));
+    var coords = [[lon, lat]];
+    competitors.forEach(function (c) { coords.push([c.lon, c.lat]); });
+    var extent = ol.extent.boundingExtent(coords.map(function (c) {
+      return ol.proj.fromLonLat(c);
+    }));
+    map.getView().fit(extent, { padding: [60, 60, 60, 60], maxZoom: 17, duration: 400 });
     mapLegend.hidden = false;
   }
 
@@ -673,6 +720,12 @@
   // ===== Основной анализ =====
 
   function runAnalysis(lat, lon, displayName, businessKey, radius) {
+    if (!BUSINESS_TYPES[businessKey]) {
+      setLoading(false);
+      showError("Выберите тип бизнеса из списка.");
+      return Promise.resolve();
+    }
+
     var business = BUSINESS_TYPES[businessKey];
     showLoading(business, radius);
     showOnMap(lat, lon, displayName, radius, [], []);
@@ -721,8 +774,8 @@
     hideError();
     setLoading(true);
 
-    var businessKey = businessTypeSelect.value;
-    var radius = parseInt(radiusSelect.value, 10);
+    var businessKey = getBusinessKey();
+    var radius = parseInt(radiusSelect.value, 10) || 500;
 
     geocodeAddress(address)
       .then(function (place) {
@@ -747,6 +800,11 @@
       addressInput.focus();
       return;
     }
+    if (!businessTypeSelect.value) {
+      showError("Выберите тип бизнеса.");
+      businessTypeSelect.focus();
+      return;
+    }
     analyzeLocation(address);
   }
 
@@ -758,8 +816,8 @@
     }
 
     setLoading(true);
-    var businessKey = businessTypeSelect.value;
-    var radius = parseInt(radiusSelect.value, 10);
+    var businessKey = getBusinessKey();
+    var radius = parseInt(radiusSelect.value, 10) || 500;
 
     navigator.geolocation.getCurrentPosition(
       function (position) {
@@ -783,7 +841,6 @@
   }
 
   // ===== Инициализация =====
-  initBusinessTypes();
   initMap();
   form.addEventListener("submit", handleFormSubmit);
   geolocationBtn.addEventListener("click", handleGeolocation);
