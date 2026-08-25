@@ -11,7 +11,14 @@
   var DEFAULT_ZOOM = 12;
   var RESULT_ZOOM = 15;
   var NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
-  var OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+  var OVERPASS_SERVERS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+  ];
+  var OVERPASS_MIN_INTERVAL_MS = 2500;
+  var overpassLastRequestAt = 0;
+  var overpassQueue = Promise.resolve();
   var NOMINATIM_MIN_INTERVAL_MS = 1100;
   var lastGeocodeRequestAt = 0;
   var STORAGE_KEY = "cena-mesta-saved-v2";
@@ -29,7 +36,18 @@
     clothes: { avgCheck: 3500, conversion: 0.8, cogs: 50, staff: 3, salary: 48000, renovation: 600000, equipment: 500000 },
     auto: { avgCheck: 5000, conversion: 0.3, cogs: 45, staff: 4, salary: 55000, renovation: 800000, equipment: 1500000 },
     flowers: { avgCheck: 2000, conversion: 1.5, cogs: 40, staff: 2, salary: 45000, renovation: 300000, equipment: 200000 },
-    kids: { avgCheck: 2500, conversion: 0.6, cogs: 20, staff: 5, salary: 50000, renovation: 900000, equipment: 600000 }
+    kids: { avgCheck: 2500, conversion: 0.6, cogs: 20, staff: 5, salary: 50000, renovation: 900000, equipment: 600000 },
+    pickup: { avgCheck: 0, conversion: 5.0, cogs: 5, staff: 2, salary: 45000, renovation: 150000, equipment: 80000 },
+    bakery: { avgCheck: 350, conversion: 4.0, cogs: 40, staff: 3, salary: 48000, renovation: 500000, equipment: 600000 },
+    bar: { avgCheck: 900, conversion: 2.0, cogs: 35, staff: 5, salary: 52000, renovation: 800000, equipment: 700000 },
+    veterinary: { avgCheck: 3200, conversion: 0.4, cogs: 25, staff: 3, salary: 55000, renovation: 600000, equipment: 900000 },
+    petshop: { avgCheck: 1500, conversion: 1.0, cogs: 45, staff: 2, salary: 45000, renovation: 400000, equipment: 350000 },
+    electronics: { avgCheck: 4500, conversion: 0.6, cogs: 50, staff: 3, salary: 50000, renovation: 500000, equipment: 800000 },
+    laundry: { avgCheck: 800, conversion: 1.5, cogs: 30, staff: 2, salary: 42000, renovation: 350000, equipment: 450000 },
+    coworking: { avgCheck: 8000, conversion: 0.2, cogs: 15, staff: 2, salary: 50000, renovation: 700000, equipment: 400000 },
+    shawarma: { avgCheck: 400, conversion: 5.0, cogs: 42, staff: 3, salary: 48000, renovation: 400000, equipment: 500000 },
+    alcohol: { avgCheck: 700, conversion: 2.5, cogs: 48, staff: 2, salary: 46000, renovation: 450000, equipment: 550000 },
+    repair: { avgCheck: 2500, conversion: 0.8, cogs: 35, staff: 2, salary: 50000, renovation: 300000, equipment: 400000 }
   };
 
   // Типы бизнеса и теги OpenStreetMap для поиска конкурентов
@@ -149,6 +167,110 @@
       rent: [1500, 4000],
       area: [80, 250],
       competition: { low: 2, high: 6 }
+    },
+    pickup: {
+      label: "ПВЗ / точка самовывоза",
+      icon: "📦",
+      plural: "пунктов выдачи",
+      tags: [
+        { amenity: "parcel_locker" },
+        { shop: "outpost" },
+        { office: "courier" },
+        { amenity: "post_office" }
+      ],
+      rent: [800, 2500],
+      area: [15, 50],
+      competition: { low: 5, high: 25 }
+    },
+    bakery: {
+      label: "Пекарня",
+      icon: "🥐",
+      plural: "пекарен",
+      tags: [{ shop: "bakery" }, { amenity: "bakery" }],
+      rent: [1800, 5000],
+      area: [25, 80],
+      competition: { low: 2, high: 8 }
+    },
+    bar: {
+      label: "Бар / паб",
+      icon: "🍺",
+      plural: "баров",
+      tags: [{ amenity: "bar" }, { amenity: "pub" }, { amenity: "biergarten" }],
+      rent: [2000, 6000],
+      area: [50, 150],
+      competition: { low: 3, high: 12 }
+    },
+    shawarma: {
+      label: "Шаурма / стрит-фуд",
+      icon: "🌯",
+      plural: "точек стрит-фуда",
+      tags: [{ amenity: "fast_food" }, { cuisine: "kebab" }],
+      rent: [1500, 4500],
+      area: [15, 40],
+      competition: { low: 4, high: 18 }
+    },
+    veterinary: {
+      label: "Ветеринарная клиника",
+      icon: "🐾",
+      plural: "ветклиник",
+      tags: [{ amenity: "veterinary" }],
+      rent: [1500, 4500],
+      area: [50, 150],
+      competition: { low: 2, high: 5 }
+    },
+    petshop: {
+      label: "Зоомагазин",
+      icon: "🐕",
+      plural: "зоомагазинов",
+      tags: [{ shop: "pet" }],
+      rent: [1500, 4000],
+      area: [40, 120],
+      competition: { low: 2, high: 6 }
+    },
+    electronics: {
+      label: "Электроника / техника",
+      icon: "📱",
+      plural: "магазинов техники",
+      tags: [{ shop: "electronics" }, { shop: "mobile_phone" }, { shop: "computer" }],
+      rent: [2000, 5500],
+      area: [40, 150],
+      competition: { low: 3, high: 10 }
+    },
+    laundry: {
+      label: "Прачечная / химчистка",
+      icon: "👔",
+      plural: "прачечных",
+      tags: [{ shop: "laundry" }, { shop: "dry_cleaning" }],
+      rent: [1200, 3500],
+      area: [30, 80],
+      competition: { low: 1, high: 4 }
+    },
+    coworking: {
+      label: "Коворкинг",
+      icon: "💻",
+      plural: "коворкингов",
+      tags: [{ amenity: "coworking_space" }, { office: "coworking" }],
+      rent: [1000, 3000],
+      area: [100, 400],
+      competition: { low: 2, high: 6 }
+    },
+    alcohol: {
+      label: "Алкогольный магазин",
+      icon: "🍷",
+      plural: "винотек",
+      tags: [{ shop: "alcohol" }, { shop: "beverages" }],
+      rent: [1500, 4000],
+      area: [30, 80],
+      competition: { low: 2, high: 8 }
+    },
+    repair: {
+      label: "Ремонт техники / телефонов",
+      icon: "🔋",
+      plural: "сервисов",
+      tags: [{ shop: "mobile_phone" }, { craft: "electronics_repair" }],
+      rent: [1500, 4000],
+      area: [20, 60],
+      competition: { low: 3, high: 10 }
     }
   };
 
@@ -821,28 +943,168 @@
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  /**
-   * Построить Overpass-запрос для поиска POI по тегам.
-   */
-  function buildOverpassQuery(lat, lon, radius, tagFilters) {
-    var parts = [];
-    tagFilters.forEach(function (tag) {
-      var key = Object.keys(tag)[0];
-      var value = tag[key];
-      parts.push('node["' + key + '"="' + value + '"](around:' + radius + ',' + lat + ',' + lon + ');');
-      parts.push('way["' + key + '"="' + value + '"](around:' + radius + ',' + lat + ',' + lon + ');');
+  function waitForOverpassSlot() {
+    var waitMs = OVERPASS_MIN_INTERVAL_MS - (Date.now() - overpassLastRequestAt);
+    return waitMs > 0 ? delay(waitMs) : Promise.resolve();
+  }
+
+  function fetchOverpassOnce(query, serverIndex) {
+    var url = OVERPASS_SERVERS[serverIndex % OVERPASS_SERVERS.length];
+    return waitForOverpassSlot().then(function () {
+      overpassLastRequestAt = Date.now();
+      return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(query)
+      });
+    }).then(function (response) {
+      if (response.status === 429) {
+        var err = new Error("Overpass API: 429");
+        err.isRateLimit = true;
+        err.serverIndex = serverIndex;
+        throw err;
+      }
+      if (!response.ok) {
+        throw new Error("Ошибка Overpass API: " + response.status);
+      }
+      return response.json();
     });
-    return "[out:json][timeout:30];(" + parts.join("") + ");out center tags;";
   }
 
   function fetchOverpass(query) {
-    return fetch(OVERPASS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: "data=" + encodeURIComponent(query)
-    }).then(function (response) {
-      if (!response.ok) throw new Error("Ошибка Overpass API: " + response.status);
-      return response.json();
+    function tryServer(index, attempt) {
+      return fetchOverpassOnce(query, index).catch(function (error) {
+        var nextServer = index + 1;
+        var nextAttempt = attempt + 1;
+
+        if (error.isRateLimit || (error.message && error.message.indexOf("429") !== -1)) {
+          if (nextServer < OVERPASS_SERVERS.length) {
+            return delay(1500 * nextServer).then(function () {
+              return tryServer(nextServer, nextAttempt);
+            });
+          }
+          if (nextAttempt <= 2) {
+            return delay(3000 * nextAttempt).then(function () {
+              return tryServer(0, nextAttempt);
+            });
+          }
+        }
+
+        if (nextServer < OVERPASS_SERVERS.length) {
+          return tryServer(nextServer, attempt);
+        }
+        throw error;
+      });
+    }
+
+    overpassQueue = overpassQueue.then(function () {
+      return tryServer(0, 0);
+    });
+    return overpassQueue;
+  }
+
+  function elementMatchesTags(tags, filterTags) {
+    return filterTags.some(function (tag) {
+      var key = Object.keys(tag)[0];
+      return tags[key] === tag[key];
+    });
+  }
+
+  function isTransitElement(tags) {
+    return tags.highway === "bus_stop" ||
+      tags.public_transport === "stop_position" ||
+      tags.railway === "tram_stop" ||
+      tags.railway === "station" ||
+      tags.highway === "platform";
+  }
+
+  function isParkingElement(tags) {
+    return tags.amenity === "parking";
+  }
+
+  /**
+   * Один объединённый запрос вместо трёх — снижает риск 429.
+   */
+  function buildCombinedOverpassQuery(lat, lon, radius, businessTags) {
+    var parts = [];
+    var seen = {};
+
+    function addPart(fragment) {
+      if (seen[fragment]) return;
+      seen[fragment] = true;
+      parts.push(fragment);
+    }
+
+    businessTags.forEach(function (tag) {
+      var key = Object.keys(tag)[0];
+      var value = tag[key];
+      addPart('node["' + key + '"="' + value + '"](around:' + radius + ',' + lat + ',' + lon + ');');
+      addPart('way["' + key + '"="' + value + '"](around:' + radius + ',' + lat + ',' + lon + ');');
+    });
+
+    addPart('node["highway"="bus_stop"](around:' + radius + ',' + lat + ',' + lon + ');');
+    addPart('node["public_transport"="stop_position"](around:' + radius + ',' + lat + ',' + lon + ');');
+    addPart('node["railway"="tram_stop"](around:' + radius + ',' + lat + ',' + lon + ');');
+    addPart('node["amenity"="parking"](around:' + radius + ',' + lat + ',' + lon + ');');
+    addPart('way["amenity"="parking"](around:' + radius + ',' + lat + ',' + lon + ');');
+
+    return "[out:json][timeout:45];(" + parts.join("") + ");out center tags 300;";
+  }
+
+  function fetchLocationData(lat, lon, radius, businessKey) {
+    var business = BUSINESS_TYPES[businessKey];
+    var query = buildCombinedOverpassQuery(lat, lon, radius, business.tags);
+
+    return fetchOverpass(query).then(function (data) {
+      var competitorSeen = {};
+      var transitSeen = {};
+      var parkingSeen = {};
+      var competitors = [];
+      var transit = [];
+      var parking = [];
+
+      (data.elements || []).forEach(function (el) {
+        var parsed = parseOsmElement(el);
+        if (!parsed) return;
+        var tags = parsed.tags;
+
+        if (isParkingElement(tags)) {
+          var pKey = parsed.lat.toFixed(4) + "|" + parsed.lon.toFixed(4);
+          if (!parkingSeen[pKey]) {
+            parkingSeen[pKey] = true;
+            parking.push(parsed);
+          }
+          return;
+        }
+
+        if (isTransitElement(tags)) {
+          var tKey = parsed.lat.toFixed(4) + "|" + parsed.lon.toFixed(4);
+          if (!transitSeen[tKey]) {
+            transitSeen[tKey] = true;
+            transit.push(parsed);
+          }
+          return;
+        }
+
+        if (!elementMatchesTags(tags, business.tags)) return;
+
+        var dist = getDistanceMeters(lat, lon, parsed.lat, parsed.lon);
+        if (dist < 30) return;
+
+        var cKey = parsed.name + "|" + parsed.lat.toFixed(4) + "|" + parsed.lon.toFixed(4);
+        if (competitorSeen[cKey]) return;
+        competitorSeen[cKey] = true;
+
+        competitors.push({
+          name: parsed.name,
+          lat: parsed.lat,
+          lon: parsed.lon,
+          distance: Math.round(dist)
+        });
+      });
+
+      competitors.sort(function (a, b) { return a.distance - b.distance; });
+      return { competitors: competitors, transit: transit, parking: parking };
     });
   }
 
@@ -858,71 +1120,6 @@
     var name = tags.name || tags.brand || tags.operator || "Без названия";
 
     return { id: element.id, lat: lat, lon: lon, name: name, tags: tags };
-  }
-
-  /**
-   * Найти конкурентов выбранного типа бизнеса.
-   */
-  function findCompetitors(lat, lon, radius, businessKey) {
-    var business = BUSINESS_TYPES[businessKey];
-    var query = buildOverpassQuery(lat, lon, radius, business.tags);
-
-    return fetchOverpass(query).then(function (data) {
-      var seen = {};
-      var competitors = [];
-
-      (data.elements || []).forEach(function (el) {
-        var parsed = parseOsmElement(el);
-        if (!parsed) return;
-
-        // Исключаем точки слишком близко к целевой (менее 30 м — вероятно то же здание)
-        var dist = getDistanceMeters(lat, lon, parsed.lat, parsed.lon);
-        if (dist < 30) return;
-
-        var dedupeKey = parsed.name + "|" + parsed.lat.toFixed(4) + "|" + parsed.lon.toFixed(4);
-        if (seen[dedupeKey]) return;
-        seen[dedupeKey] = true;
-
-        competitors.push({
-          name: parsed.name,
-          lat: parsed.lat,
-          lon: parsed.lon,
-          distance: Math.round(dist)
-        });
-      });
-
-      competitors.sort(function (a, b) { return a.distance - b.distance; });
-      return competitors;
-    });
-  }
-
-  /**
-   * Найти остановки общественного транспорта.
-   */
-  function findTransit(lat, lon, radius) {
-    var query = "[out:json][timeout:25];(" +
-      'node["highway"="bus_stop"](around:' + radius + ',' + lat + ',' + lon + ");" +
-      'node["public_transport"="stop_position"](around:' + radius + ',' + lat + ',' + lon + ");" +
-      'node["railway"="tram_stop"](around:' + radius + ',' + lat + ',' + lon + ");" +
-      ");out;";
-
-    return fetchOverpass(query).then(function (data) {
-      return (data.elements || []).map(parseOsmElement).filter(Boolean);
-    });
-  }
-
-  /**
-   * Найти парковки.
-   */
-  function findParking(lat, lon, radius) {
-    var query = "[out:json][timeout:25];(" +
-      'node["amenity"="parking"](around:' + radius + ',' + lat + ',' + lon + ");" +
-      'way["amenity"="parking"](around:' + radius + ',' + lat + ',' + lon + ");" +
-      ");out center;";
-
-    return fetchOverpass(query).then(function (data) {
-      return (data.elements || []).map(parseOsmElement).filter(Boolean);
-    });
   }
 
   // ===== Карта: метки и круг радиуса (OpenLayers) =====
@@ -1160,14 +1357,10 @@
     showLoading(business, radius);
     showOnMap(lat, lon, displayName, radius, [], []);
 
-    return Promise.all([
-      findCompetitors(lat, lon, radius, businessKey),
-      findTransit(lat, lon, radius),
-      findParking(lat, lon, radius)
-    ]).then(function (results) {
-      var competitors = results[0];
-      var transit = results[1];
-      var parking = results[2];
+    return Promise.resolve(fetchLocationData(lat, lon, radius, businessKey)).then(function (locationData) {
+      var competitors = locationData.competitors;
+      var transit = locationData.transit;
+      var parking = locationData.parking;
       var metrics = calculateStubMetrics(lat, lon, business);
       var competition = getCompetitionLevel(competitors.length, business);
       var score = getLocationScore(competitors, transit, parking, business, lat, lon);
@@ -1195,6 +1388,11 @@
       resetResults();
       if (error instanceof TypeError) {
         showError("Ошибка сети. Проверьте подключение к интернету.");
+      } else if (error.message && error.message.indexOf("429") !== -1) {
+        showError(
+          "Сервер карт перегружен (лимит запросов). Подождите 10–20 секунд и попробуйте снова " +
+          "или уменьшите радиус анализа."
+        );
       } else {
         showError(error.message || "Ошибка анализа.");
       }

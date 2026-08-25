@@ -39,18 +39,37 @@
             <div class="search__field">
               <label class="search__label" for="business-type">Тип бизнеса</label>
               <select class="search__select" id="business-type" name="businessType" required>
-                <option value="hairdresser">Парикмахерская / барбершоп</option>
-                <option value="cafe">Кафе / кофейня</option>
-                <option value="restaurant">Ресторан</option>
-                <option value="pharmacy">Аптека</option>
-                <option value="grocery">Продуктовый магазин</option>
-                <option value="fitness">Фитнес-клуб</option>
-                <option value="dentist">Стоматология</option>
-                <option value="bank">Банк / отделение</option>
-                <option value="clothes">Магазин одежды</option>
-                <option value="auto">Автосервис</option>
-                <option value="flowers">Цветочный магазин</option>
-                <option value="kids">Детский центр</option>
+                <optgroup label="Общепит">
+                  <option value="cafe">Кафе / кофейня</option>
+                  <option value="restaurant">Ресторан</option>
+                  <option value="bakery">Пекарня</option>
+                  <option value="bar">Бар / паб</option>
+                  <option value="shawarma">Шаурма / стрит-фуд</option>
+                </optgroup>
+                <optgroup label="Ритейл">
+                  <option value="grocery">Продуктовый магазин</option>
+                  <option value="pharmacy">Аптека</option>
+                  <option value="clothes">Магазин одежды</option>
+                  <option value="flowers">Цветочный магазин</option>
+                  <option value="electronics">Электроника / техника</option>
+                  <option value="alcohol">Алкогольный магазин</option>
+                  <option value="petshop">Зоомагазин</option>
+                </optgroup>
+                <optgroup label="Услуги">
+                  <option value="hairdresser">Парикмахерская / барбершоп</option>
+                  <option value="dentist">Стоматология</option>
+                  <option value="fitness">Фитнес-клуб</option>
+                  <option value="auto">Автосервис</option>
+                  <option value="veterinary">Ветеринарная клиника</option>
+                  <option value="laundry">Прачечная / химчистка</option>
+                  <option value="repair">Ремонт техники / телефонов</option>
+                  <option value="coworking">Коворкинг</option>
+                </optgroup>
+                <optgroup label="Логистика и другое">
+                  <option value="pickup">ПВЗ / точка самовывоза</option>
+                  <option value="bank">Банк / отделение</option>
+                  <option value="kids">Детский центр</option>
+                </optgroup>
               </select>
             </div>
             <div class="search__field">
