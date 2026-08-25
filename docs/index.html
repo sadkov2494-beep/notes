@@ -5,14 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Цена места — анализ коммерческой локации</title>
 
-  <!-- Стили Leaflet -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
     crossorigin=""
   >
-
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -22,84 +20,157 @@
         <span class="header__logo" aria-hidden="true">📍</span>
         <div>
           <h1 class="header__title">Цена места</h1>
-          <p class="header__subtitle">Анализ коммерческой локации по адресу</p>
+          <p class="header__subtitle">Анализ коммерческой локации с учётом типа бизнеса</p>
         </div>
       </div>
     </header>
 
     <main class="main">
-      <section class="search" aria-label="Поиск адреса">
+      <section class="search" aria-label="Параметры анализа">
         <form class="search__form" id="search-form" novalidate>
-          <label class="search__label" for="address-input">Адрес</label>
-          <div class="search__controls">
-            <input
-              class="search__input"
-              type="text"
-              id="address-input"
-              name="address"
-              placeholder="Например: Москва, Тверская улица, 1 или Казань, Баумана 10"
-              autocomplete="street-address"
-              required
-            >
-            <button class="btn btn--primary" type="submit" id="analyze-btn">
-              Анализировать
-            </button>
-            <button class="btn btn--secondary" type="button" id="geolocation-btn">
-              Моё местоположение
-            </button>
+          <div class="search__row">
+            <div class="search__field search__field--grow">
+              <label class="search__label" for="address-input">Адрес</label>
+              <input
+                class="search__input"
+                type="text"
+                id="address-input"
+                name="address"
+                placeholder="Например: Москва, Тверская улица, 1"
+                autocomplete="street-address"
+                required
+              >
+            </div>
+            <div class="search__field">
+              <label class="search__label" for="business-type">Тип бизнеса</label>
+              <select class="search__select" id="business-type" name="businessType"></select>
+            </div>
+            <div class="search__field">
+              <label class="search__label" for="search-radius">Радиус поиска</label>
+              <select class="search__select" id="search-radius" name="radius">
+                <option value="300">300 м</option>
+                <option value="500" selected>500 м</option>
+                <option value="800">800 м</option>
+                <option value="1000">1 км</option>
+              </select>
+            </div>
+          </div>
+          <div class="search__actions">
+            <button class="btn btn--primary" type="submit" id="analyze-btn">Анализировать</button>
+            <button class="btn btn--secondary" type="button" id="geolocation-btn">Моё местоположение</button>
           </div>
         </form>
         <p class="message message--error" id="error-message" role="alert" hidden></p>
       </section>
 
       <section class="map-section" aria-label="Карта">
+        <div class="map-legend" id="map-legend" hidden>
+          <span class="map-legend__item"><i class="dot dot--target"></i> Ваша точка</span>
+          <span class="map-legend__item"><i class="dot dot--competitor"></i> Конкуренты</span>
+          <span class="map-legend__item"><i class="dot dot--transit"></i> Остановки</span>
+        </div>
         <div id="map" class="map"></div>
       </section>
 
       <section class="results" aria-label="Результаты анализа">
-        <h2 class="results__title">Результаты анализа</h2>
+        <div class="results__header">
+          <h2 class="results__title">Результаты анализа</h2>
+          <p class="results__business" id="results-business" hidden></p>
+        </div>
         <p class="results__hint" id="results-hint">
-          Введите адрес и нажмите «Анализировать», чтобы получить оценку локации.
+          Укажите адрес, выберите тип бизнеса и нажмите «Анализировать».
         </p>
 
+        <div class="summary" id="summary-block" hidden>
+          <div class="summary__score" id="summary-score">—</div>
+          <p class="summary__text" id="summary-text"></p>
+        </div>
+
         <div class="results__grid" id="results-grid" hidden>
-          <article class="card" id="card-traffic">
-            <div class="card__icon" aria-hidden="true">🚶</div>
-            <h3 class="card__title">Пешеходный трафик</h3>
-            <p class="card__value" id="value-traffic">—</p>
-            <p class="card__desc" id="desc-traffic">Оценка проходимости в сутки</p>
-          </article>
-
-          <article class="card" id="card-rent">
-            <div class="card__icon" aria-hidden="true">🏢</div>
-            <h3 class="card__title">Средняя арендная ставка</h3>
-            <p class="card__value" id="value-rent">—</p>
-            <p class="card__desc" id="desc-rent">Коммерческая недвижимость, ₽/м² в месяц</p>
-          </article>
-
-          <article class="card" id="card-competitors">
+          <article class="card">
             <div class="card__icon" aria-hidden="true">🏪</div>
             <h3 class="card__title">Конкуренты</h3>
             <p class="card__value" id="value-competitors">—</p>
-            <p class="card__desc" id="desc-competitors">Похожие точки в радиусе 500 м</p>
+            <p class="card__desc" id="desc-competitors">В выбранном радиусе</p>
           </article>
 
-          <article class="card" id="card-cadastre">
+          <article class="card">
+            <div class="card__icon" aria-hidden="true">📏</div>
+            <h3 class="card__title">Ближайший конкурент</h3>
+            <p class="card__value" id="value-nearest">—</p>
+            <p class="card__desc" id="desc-nearest">Расстояние до соседа</p>
+          </article>
+
+          <article class="card">
+            <div class="card__icon" aria-hidden="true">⚖️</div>
+            <h3 class="card__title">Уровень конкуренции</h3>
+            <p class="card__value" id="value-competition">—</p>
+            <p class="card__desc" id="desc-competition">Плотность рынка</p>
+          </article>
+
+          <article class="card">
+            <div class="card__icon" aria-hidden="true">🏢</div>
+            <h3 class="card__title">Аренда</h3>
+            <p class="card__value" id="value-rent">—</p>
+            <p class="card__desc" id="desc-rent">Оценка ₽/м² в месяц</p>
+          </article>
+
+          <article class="card">
+            <div class="card__icon" aria-hidden="true">📐</div>
+            <h3 class="card__title">Рекомендуемая площадь</h3>
+            <p class="card__value" id="value-area">—</p>
+            <p class="card__desc" id="desc-area">Типовой метраж для формата</p>
+          </article>
+
+          <article class="card">
+            <div class="card__icon" aria-hidden="true">💰</div>
+            <h3 class="card__title">Бюджет аренды</h3>
+            <p class="card__value" id="value-budget">—</p>
+            <p class="card__desc" id="desc-budget">В месяц за помещение</p>
+          </article>
+
+          <article class="card">
+            <div class="card__icon" aria-hidden="true">🚶</div>
+            <h3 class="card__title">Пешеходный трафик</h3>
+            <p class="card__value" id="value-traffic">—</p>
+            <p class="card__desc" id="desc-traffic">Оценка проходимости</p>
+          </article>
+
+          <article class="card">
+            <div class="card__icon" aria-hidden="true">🚌</div>
+            <h3 class="card__title">Транспорт</h3>
+            <p class="card__value" id="value-transit">—</p>
+            <p class="card__desc" id="desc-transit">Остановки рядом</p>
+          </article>
+
+          <article class="card">
+            <div class="card__icon" aria-hidden="true">🅿️</div>
+            <h3 class="card__title">Парковка</h3>
+            <p class="card__value" id="value-parking">—</p>
+            <p class="card__desc" id="desc-parking">Парковочные места рядом</p>
+          </article>
+
+          <article class="card">
             <div class="card__icon" aria-hidden="true">📋</div>
             <h3 class="card__title">Кадастровая стоимость</h3>
             <p class="card__value" id="value-cadastre">—</p>
-            <p class="card__desc" id="desc-cadastre">Ориентировочная оценка участка</p>
+            <p class="card__desc" id="desc-cadastre">Ориентировочная оценка</p>
           </article>
         </div>
 
+        <div class="competitors-list" id="competitors-list" hidden>
+          <h3 class="competitors-list__title">Список конкурентов на карте</h3>
+          <ul class="competitors-list__items" id="competitors-items"></ul>
+        </div>
+
         <p class="results__disclaimer">
-          Данные анализа являются демонстрационными заглушками. Реальный сервер аналитики пока не подключён.
+          Конкуренты и инфраструктура — из OpenStreetMap. Аренда, трафик и кадастр — оценочные заглушки.
         </p>
       </section>
     </main>
 
     <footer class="footer">
-      <p>Карта: OpenStreetMap · Геокодер: Nominatim · © 2026 Цена места</p>
+      <p>Карта и POI: OpenStreetMap · Геокодер: Nominatim · Overpass API</p>
     </footer>
   </div>
 
