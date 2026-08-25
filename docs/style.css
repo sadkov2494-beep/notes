@@ -118,6 +118,8 @@ body {
 }
 
 .search__select { min-width: 200px; }
+.search__select optgroup { color: var(--text-muted); font-weight: 600; }
+.search__select option { color: var(--text); background: var(--bg-card); }
 
 .search__input::placeholder { color: var(--text-muted); }
 
